@@ -13,7 +13,9 @@ test.describe("static shell", () => {
     ).toBeVisible();
     await expect(page.getByLabel("Email")).toBeVisible();
     await expect(page.getByLabel("Hasło")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Zaloguj" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Zaloguj się" }),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Utwórz konto" }),
     ).toBeVisible();

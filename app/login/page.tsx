@@ -12,11 +12,14 @@ export default function LoginPage() {
             Zaloguj się
           </h1>
           <p className="text-base leading-7 text-slate-600">
-            Ekran logowania jest na razie wersją demonstracyjną.
+            Zaloguj się albo utwórz konto, żeby korzystać z pomysłów ekipy.
           </p>
         </div>
 
-        <form className="space-y-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+        <form
+          className="space-y-4 rounded-md border border-slate-200 bg-white p-4 shadow-sm"
+          data-testid="auth-form"
+        >
           <label className="block space-y-2">
             <span className="text-sm font-semibold text-slate-700">Email</span>
             <input
@@ -41,7 +44,7 @@ export default function LoginPage() {
             className="min-h-12 w-full rounded-md bg-teal-700 px-4 text-base font-semibold text-white transition hover:bg-teal-800"
             type="button"
           >
-            Zaloguj
+            Zaloguj się
           </button>
 
           <button
