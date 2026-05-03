@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Calendar PWA
 
-## Getting Started
+A mobile-first calendar PWA for a small private group. The app helps users add ideas, vote on them, rank them, and schedule selected ideas in a shared calendar.
 
-First, run the development server:
+## Product Direction
+
+- Build a simple MVP first.
+- Prioritize mobile usability.
+- Keep the visible application UI in Polish.
+- Keep repository instructions, technical documentation, tests, identifiers, and comments in English.
+- Use Supabase for authentication, database storage, and user identity.
+- Deploy on Vercel.
+
+## Tech Stack
+
+- Next.js App Router
+- React
+- TypeScript
+- Tailwind CSS
+- Supabase Auth
+- Supabase PostgreSQL
+- Playwright for E2E tests
+
+## Current Scripts
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run lint
+npm run build
+npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Planned Checks
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The project documentation expects these checks once the related scripts and tools are configured:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run typecheck
+npm run test:e2e
+```
 
-## Learn More
+Until a `typecheck` script exists, use:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx tsc --noEmit
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Until a `test:e2e` script exists, use Playwright directly after Playwright is configured:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npx playwright test
+```
 
-## Deploy on Vercel
+## Development Notes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Read `AGENTS.md` and `PROJECT_CONTEXT.md` before implementing product changes.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Do not implement advanced PWA or push-notification features before the core MVP works unless the current task explicitly asks for them.
