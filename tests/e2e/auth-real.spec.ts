@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from "@supabase/supabase-js";
 
 import {
   getSupabasePublicTestConfig,
@@ -25,12 +29,15 @@ function createUniqueIdeaTitle() {
   return `Pomysł E2E ${Date.now()} ${Math.random().toString(36).slice(2)}`;
 }
 
-async function deleteGeneratedIdeaThroughRls(title: string) {
+async function createAuthenticatedPublicClient(): Promise<{
+  client: SupabaseClient;
+  user: User;
+}> {
   if (!supabasePublicConfig) {
-    throw new Error("Cleanup requires public Supabase E2E configuration.");
+    throw new Error("Public Supabase E2E configuration is required.");
   }
 
-  const cleanupClient = createClient(
+  const client = createClient(
     supabasePublicConfig.url,
     supabasePublicConfig.publicKey,
     {
@@ -43,7 +50,7 @@ async function deleteGeneratedIdeaThroughRls(title: string) {
   );
 
   const { data: authData, error: signInError } =
-    await cleanupClient.auth.signInWithPassword({
+    await client.auth.signInWithPassword({
       email: authEmail,
       password: authPassword,
     });
@@ -55,14 +62,54 @@ async function deleteGeneratedIdeaThroughRls(title: string) {
   }
 
   if (!authData.user) {
-    throw new Error("Cleanup sign-in did not return an authenticated user.");
+    throw new Error("Public Supabase sign-in did not return a user.");
   }
 
-  const { data: deletedIdeas, error: deleteError } = await cleanupClient
+  return {
+    client,
+    user: authData.user,
+  };
+}
+
+async function findGeneratedIdeaIdThroughRls(
+  client: SupabaseClient,
+  userId: string,
+  title: string,
+) {
+  const { data: ideas, error } = await client
+    .from("ideas")
+    .select("id,title,created_by")
+    .eq("title", title)
+    .eq("created_by", userId);
+
+  if (error) {
+    throw new Error(
+      `Could not find generated idea through RLS: ${error.message}`,
+    );
+  }
+
+  const matchingIdeas = ideas ?? [];
+
+  if (matchingIdeas.length !== 1) {
+    throw new Error(
+      `Found ${matchingIdeas.length} generated ideas for "${title}". Expected exactly 1.`,
+    );
+  }
+
+  return matchingIdeas[0].id as string;
+}
+
+async function deleteGeneratedIdeaByIdThroughRls(
+  client: SupabaseClient,
+  userId: string,
+  ideaId: string,
+  title: string,
+) {
+  const { data: deletedIdeas, error: deleteError } = await client
     .from("ideas")
     .delete()
-    .eq("title", title)
-    .eq("created_by", authData.user.id)
+    .eq("id", ideaId)
+    .eq("created_by", userId)
     .select("id,title,created_by");
 
   if (deleteError) {
@@ -78,8 +125,69 @@ async function deleteGeneratedIdeaThroughRls(title: string) {
       } generated ideas for "${title}". Expected exactly 1; check that authors can delete their own ideas through RLS.`,
     );
   }
+}
 
-  await cleanupClient.auth.signOut();
+async function deleteGeneratedIdeaThroughRls(title: string) {
+  const { client, user } = await createAuthenticatedPublicClient();
+
+  try {
+    const ideaId = await findGeneratedIdeaIdThroughRls(client, user.id, title);
+
+    await deleteGeneratedIdeaByIdThroughRls(client, user.id, ideaId, title);
+  } finally {
+    await client.auth.signOut();
+  }
+}
+
+async function deleteGeneratedCommentVoteAndIdeaThroughRls(
+  title: string,
+  commentBody: string | null,
+) {
+  const { client, user } = await createAuthenticatedPublicClient();
+
+  try {
+    const ideaId = await findGeneratedIdeaIdThroughRls(client, user.id, title);
+
+    if (commentBody) {
+      const { data: deletedComments, error: deleteCommentError } = await client
+        .from("idea_comments")
+        .delete()
+        .eq("idea_id", ideaId)
+        .eq("user_id", user.id)
+        .eq("body", commentBody)
+        .select("id,idea_id,user_id,body");
+
+      if (deleteCommentError) {
+        throw new Error(
+          `Cleanup failed through comments RLS/delete policy: ${deleteCommentError.message}`,
+        );
+      }
+
+      if ((deletedComments ?? []).length !== 1) {
+        throw new Error(
+          `Cleanup through comments RLS/delete policy deleted ${
+            deletedComments?.length ?? 0
+          } generated comments for "${title}". Expected exactly 1.`,
+        );
+      }
+    }
+
+    const { error: deleteVoteError } = await client
+      .from("votes")
+      .delete()
+      .eq("idea_id", ideaId)
+      .eq("user_id", user.id);
+
+    if (deleteVoteError) {
+      throw new Error(
+        `Cleanup failed through votes RLS/delete policy: ${deleteVoteError.message}`,
+      );
+    }
+
+    await deleteGeneratedIdeaByIdThroughRls(client, user.id, ideaId, title);
+  } finally {
+    await client.auth.signOut();
+  }
 }
 
 test.describe("real Supabase login", () => {
@@ -199,6 +307,185 @@ test.describe("real Supabase ideas", () => {
     } finally {
       if (shouldCleanup) {
         await deleteGeneratedIdeaThroughRls(title);
+      }
+    }
+  });
+});
+
+test.describe("real Supabase voting", () => {
+  test.skip(
+    !supabasePublicConfig || !authEmail || !authPassword,
+    "Set public Supabase env vars plus E2E_AUTH_EMAIL and E2E_AUTH_PASSWORD to run real voting E2E tests.",
+  );
+
+  test("authenticated user can vote, remove vote, comment, and clean up through RLS", async ({
+    page,
+  }) => {
+    const title = createUniqueIdeaTitle();
+    const commentBody = `Komentarz E2E ${Date.now()} ${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    let shouldCleanup = false;
+    let shouldCleanupComment = false;
+
+    try {
+      await page.goto("/login");
+
+      await page.getByLabel("Email").fill(authEmail);
+      await page.getByLabel("Hasło").fill(authPassword);
+      await page.getByRole("button", { name: "Zaloguj się" }).click();
+
+      await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
+
+      await page.goto("/add");
+      await page.getByLabel("Tytuł").fill(title);
+      await page.getByLabel("Opis").fill("Pomysł do głosowania E2E.");
+      await page.getByLabel("Miejsce").fill("Ranking testowy");
+      await page.getByLabel("Cena").fill("10");
+      await page.getByRole("button", { name: "Dodaj pomysł" }).click();
+
+      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      shouldCleanup = true;
+
+      const ideaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(ideaCard).toBeVisible({ timeout: 15_000 });
+      await expect(ideaCard.getByTestId("idea-vote-count")).toHaveText(
+        "0 głosów",
+      );
+
+      await ideaCard.getByRole("button", { name: "Głosuj" }).click();
+
+      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      await expect(page.getByText("Głos został oddany.")).toBeVisible({
+        timeout: 15_000,
+      });
+
+      const votedIdeaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(votedIdeaCard.getByTestId("idea-vote-count")).toHaveText(
+        "1 głos",
+      );
+      await expect(
+        votedIdeaCard.getByRole("button", { name: "Cofnij głos" }),
+      ).toBeVisible();
+      await expect(
+        votedIdeaCard.getByRole("button", { name: "Głosuj" }),
+      ).toHaveCount(0);
+
+      const { client, user } = await createAuthenticatedPublicClient();
+
+      try {
+        const ideaId = await findGeneratedIdeaIdThroughRls(
+          client,
+          user.id,
+          title,
+        );
+        const { error: duplicateVoteError } = await client
+          .from("votes")
+          .insert({
+            idea_id: ideaId,
+            user_id: user.id,
+          });
+
+        expect(duplicateVoteError?.code).toBe("23505");
+      } finally {
+        await client.auth.signOut();
+      }
+
+      await page.goto("/voting");
+
+      const rankingItem = page
+        .getByTestId("voting-ranking-item")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(rankingItem).toBeVisible({ timeout: 15_000 });
+      await expect(rankingItem.getByTestId("voting-vote-count")).toHaveText(
+        "1 głos",
+      );
+
+      await page.goto("/ideas");
+
+      const cardBeforeRemovingVote = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await cardBeforeRemovingVote
+        .getByRole("button", { name: "Cofnij głos" })
+        .click();
+
+      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      await expect(page.getByText("Głos został cofnięty.")).toBeVisible({
+        timeout: 15_000,
+      });
+
+      const unvotedIdeaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(unvotedIdeaCard.getByTestId("idea-vote-count")).toHaveText(
+        "0 głosów",
+      );
+      await expect(
+        unvotedIdeaCard.getByRole("button", { name: "Głosuj" }),
+      ).toBeVisible();
+
+      await page.goto("/voting");
+
+      const unvotedRankingItem = page
+        .getByTestId("voting-ranking-item")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(unvotedRankingItem).toBeVisible({ timeout: 15_000 });
+      await expect(
+        unvotedRankingItem.getByTestId("voting-vote-count"),
+      ).toHaveText("0 głosów");
+
+      await page.goto("/ideas");
+
+      const commentIdeaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+      const commentForm = commentIdeaCard.getByTestId("idea-comment-form");
+
+      await commentForm.getByLabel("Komentarz").fill(commentBody);
+      await commentForm
+        .getByRole("button", { name: "Dodaj komentarz" })
+        .click();
+
+      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      await expect(page.getByText("Komentarz został dodany.")).toBeVisible({
+        timeout: 15_000,
+      });
+      shouldCleanupComment = true;
+
+      const commentedIdeaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+      const generatedComment = commentedIdeaCard
+        .getByTestId("idea-comment")
+        .filter({ hasText: commentBody })
+        .first();
+
+      await expect(generatedComment).toBeVisible({ timeout: 15_000 });
+    } finally {
+      if (shouldCleanup) {
+        await deleteGeneratedCommentVoteAndIdeaThroughRls(
+          title,
+          shouldCleanupComment ? commentBody : null,
+        );
       }
     }
   });

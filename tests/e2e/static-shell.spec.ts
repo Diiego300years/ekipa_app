@@ -105,18 +105,124 @@ test.describe("static shell", () => {
     await expect(ideasLink).toHaveAttribute("aria-current", "page");
   });
 
-  test("renders the Polish voting placeholder", async ({ page }) => {
+  test("renders the Polish voting ranking UI", async ({ page }) => {
     await page.goto("/voting");
 
     await expect(
       page.getByRole("heading", { name: "Głosowanie" }),
     ).toBeVisible();
     await expect(
-      page.getByText("Głosowanie będzie dostępne po zalogowaniu"),
+      page.getByText("Ranking pokazuje, które pomysły mają najwięcej głosów."),
     ).toBeVisible();
-    await expect(page.getByText("Wieczór planszówek")).toBeVisible();
-    await expect(page.getByText("8")).toBeVisible();
-    await expect(page.getByText("głosów").first()).toBeVisible();
+
+    await expect(async () => {
+      const hasKnownState = await Promise.all([
+        page
+          .getByText("Ranking będzie dostępny po skonfigurowaniu Supabase.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByText("Nie udało się wczytać rankingu.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByText("Nie ma jeszcze pomysłów do głosowania.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByTestId("voting-ranking-item")
+          .first()
+          .isVisible()
+          .catch(() => false),
+      ]);
+
+      expect(hasKnownState.some(Boolean)).toBe(true);
+    }).toPass();
+  });
+
+  test("shows Polish login guidance when a guest uses a vote action", async ({
+    page,
+  }) => {
+    await page.goto("/ideas");
+
+    const voteAction = page.getByRole("link", { name: "Głosuj" }).first();
+    const hasVoteAction = await voteAction.isVisible().catch(() => false);
+
+    test.skip(
+      !hasVoteAction,
+      "Guest vote guidance needs at least one public idea with Supabase configured.",
+    );
+
+    await voteAction.click();
+
+    await expect(page).toHaveURL(/\/login/);
+    await expect(
+      page.getByText("Zaloguj się, żeby oddać głos."),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Zaloguj się" }),
+    ).toBeVisible();
+  });
+
+  test("shows Polish login guidance when a guest adds a comment", async ({
+    page,
+  }) => {
+    await page.goto("/ideas");
+
+    const commentForm = page.getByTestId("idea-comment-form").first();
+    const hasCommentForm = await commentForm.isVisible().catch(() => false);
+
+    test.skip(
+      !hasCommentForm,
+      "Guest comment guidance needs at least one public idea with comments enabled.",
+    );
+
+    await commentForm.getByLabel("Komentarz").fill("Komentarz gościa");
+    await commentForm
+      .getByRole("button", { name: "Dodaj komentarz" })
+      .click();
+
+    await expect(
+      commentForm.getByText("Zaloguj się, żeby dodać komentarz."),
+    ).toBeVisible();
+    await expect(
+      commentForm.getByRole("link", { name: "Przejdź do logowania" }),
+    ).toHaveAttribute("href", /\/login/);
+  });
+
+  test("validates comment input in Polish", async ({ page }) => {
+    await page.goto("/ideas");
+
+    const commentForm = page.getByTestId("idea-comment-form").first();
+    const hasCommentForm = await commentForm.isVisible().catch(() => false);
+
+    test.skip(
+      !hasCommentForm,
+      "Comment validation needs at least one public idea with comments enabled.",
+    );
+
+    await commentForm
+      .getByRole("button", { name: "Dodaj komentarz" })
+      .click();
+    await expect(
+      commentForm.getByText("Komentarz jest wymagany."),
+    ).toBeVisible();
+
+    await commentForm.getByLabel("Komentarz").fill("   ");
+    await commentForm
+      .getByRole("button", { name: "Dodaj komentarz" })
+      .click();
+    await expect(
+      commentForm.getByText("Komentarz nie może być pusty."),
+    ).toBeVisible();
+
+    await commentForm.getByLabel("Komentarz").fill("K".repeat(1001));
+    await commentForm
+      .getByRole("button", { name: "Dodaj komentarz" })
+      .click();
+    await expect(
+      commentForm.getByText("Komentarz może mieć maksymalnie 1000 znaków."),
+    ).toBeVisible();
   });
 
   test("renders the schedule placeholder", async ({ page }) => {

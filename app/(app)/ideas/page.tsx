@@ -1,6 +1,20 @@
+import Link from "next/link";
+
 import { AuthStatusMessage } from "@/app/auth-status-message";
-import { readAuthRedirectMessage } from "@/lib/auth/redirect-message";
-import { formatIdeaPrice, getIdeasForList } from "@/lib/supabase/ideas";
+import {
+  appendAuthRedirectMessage,
+  readAuthRedirectMessage,
+} from "@/lib/auth/redirect-message";
+import {
+  formatIdeaPrice,
+  formatIdeaVoteCount,
+  getIdeasForList,
+} from "@/lib/supabase/ideas";
+import { getCurrentSupabaseUser } from "@/lib/supabase/session";
+
+import { removeVoteForIdeaAction, voteForIdeaAction } from "./actions";
+import { CommentForm } from "./comment-form";
+import { VoteButton } from "./vote-button";
 
 type IdeasPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -8,7 +22,18 @@ type IdeasPageProps = {
 
 export default async function IdeasPage({ searchParams }: IdeasPageProps) {
   const resolvedSearchParams = await searchParams;
-  const ideasResult = await getIdeasForList();
+  const user = await getCurrentSupabaseUser();
+  const ideasResult = await getIdeasForList({ includeComments: true });
+  const voteLoginHref = appendAuthRedirectMessage(
+    "/login",
+    "error",
+    "Zaloguj się, żeby oddać głos.",
+  );
+  const commentLoginHref = appendAuthRedirectMessage(
+    "/login",
+    "error",
+    "Zaloguj się, żeby dodać komentarz.",
+  );
 
   return (
     <section className="space-y-5">
@@ -48,6 +73,7 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
           {ideasResult.ideas.map((idea) => (
             <article
               key={idea.id}
+              data-testid="idea-card"
               className="rounded-md border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="space-y-2">
@@ -74,6 +100,82 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
                 <p className="font-medium text-slate-900">
                   {formatIdeaPrice(idea.price)}
                 </p>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                <p
+                  className="text-sm font-semibold text-slate-900"
+                  data-testid="idea-vote-count"
+                >
+                  {formatIdeaVoteCount(idea.voteCount)}
+                </p>
+
+                {user ? (
+                  idea.hasCurrentUserVote ? (
+                    <form
+                      action={removeVoteForIdeaAction}
+                      data-testid="idea-voted-state"
+                    >
+                      <input name="ideaId" type="hidden" value={idea.id} />
+                      <VoteButton
+                        label="Cofnij głos"
+                        pendingLabel="Cofanie..."
+                        variant="secondary"
+                      />
+                    </form>
+                  ) : (
+                    <form action={voteForIdeaAction}>
+                      <input name="ideaId" type="hidden" value={idea.id} />
+                      <VoteButton />
+                    </form>
+                  )
+                ) : (
+                  <div className="text-right">
+                    <Link
+                      className="inline-flex min-h-11 items-center rounded-md bg-teal-700 px-4 text-sm font-semibold text-white transition hover:bg-teal-800"
+                      href={voteLoginHref}
+                    >
+                      Głosuj
+                    </Link>
+                    <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
+                      Zaloguj się, żeby oddać głos.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div
+                className="mt-4 border-t border-slate-100 pt-4"
+                data-testid="idea-comments"
+              >
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Komentarze
+                </h3>
+
+                {idea.comments.length > 0 ? (
+                  <ul className="mt-3 space-y-2">
+                    {idea.comments.map((comment) => (
+                      <li
+                        className="border-l border-slate-200 pl-3 text-sm"
+                        data-testid="idea-comment"
+                        key={comment.id}
+                      >
+                        <p className="font-semibold text-slate-700">
+                          {comment.authorName}
+                        </p>
+                        <p className="whitespace-pre-wrap break-words leading-6 text-slate-700">
+                          {comment.body}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Brak komentarzy.
+                  </p>
+                )}
+
+                <CommentForm ideaId={idea.id} loginHref={commentLoginHref} />
               </div>
             </article>
           ))}
