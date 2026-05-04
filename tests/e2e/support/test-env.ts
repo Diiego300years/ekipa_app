@@ -62,3 +62,19 @@ export function hasSupabasePublicTestConfig() {
         getTestEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY")),
   );
 }
+
+export function getSupabasePublicTestConfig() {
+  const url = getTestEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const publicKey =
+    getTestEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") ||
+    getTestEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+
+  if (!url || !publicKey) {
+    return null;
+  }
+
+  return {
+    url,
+    publicKey,
+  };
+}

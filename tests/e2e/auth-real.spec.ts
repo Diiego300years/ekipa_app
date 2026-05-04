@@ -1,18 +1,85 @@
 import { expect, test } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
-import { getTestEnv, hasSupabasePublicTestConfig } from "./support/test-env";
+import {
+  getSupabasePublicTestConfig,
+  getTestEnv,
+  hasSupabasePublicTestConfig,
+} from "./support/test-env";
 
 const authEmail = getTestEnv("E2E_AUTH_EMAIL");
 const authPassword = getTestEnv("E2E_AUTH_PASSWORD");
 const registrationDomain = getTestEnv("E2E_AUTH_REGISTER_EMAIL_DOMAIN");
 const registrationPassword = getTestEnv("E2E_AUTH_REGISTER_PASSWORD");
 const resetEmail = getTestEnv("E2E_AUTH_RESET_EMAIL");
+const supabasePublicConfig = getSupabasePublicTestConfig();
 
 function createRegistrationEmail(domain: string) {
   const cleanDomain = domain.replace(/^@/, "");
   const uniquePart = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   return `ekipa-test-${uniquePart}@${cleanDomain}`;
+}
+
+function createUniqueIdeaTitle() {
+  return `Pomysł E2E ${Date.now()} ${Math.random().toString(36).slice(2)}`;
+}
+
+async function deleteGeneratedIdeaThroughRls(title: string) {
+  if (!supabasePublicConfig) {
+    throw new Error("Cleanup requires public Supabase E2E configuration.");
+  }
+
+  const cleanupClient = createClient(
+    supabasePublicConfig.url,
+    supabasePublicConfig.publicKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    },
+  );
+
+  const { data: authData, error: signInError } =
+    await cleanupClient.auth.signInWithPassword({
+      email: authEmail,
+      password: authPassword,
+    });
+
+  if (signInError) {
+    throw new Error(
+      `Cleanup sign-in with the public Supabase key failed: ${signInError.message}`,
+    );
+  }
+
+  if (!authData.user) {
+    throw new Error("Cleanup sign-in did not return an authenticated user.");
+  }
+
+  const { data: deletedIdeas, error: deleteError } = await cleanupClient
+    .from("ideas")
+    .delete()
+    .eq("title", title)
+    .eq("created_by", authData.user.id)
+    .select("id,title,created_by");
+
+  if (deleteError) {
+    throw new Error(
+      `Cleanup failed through RLS/delete policy: ${deleteError.message}`,
+    );
+  }
+
+  if ((deletedIdeas ?? []).length !== 1) {
+    throw new Error(
+      `Cleanup through RLS/delete policy deleted ${
+        deletedIdeas?.length ?? 0
+      } generated ideas for "${title}". Expected exactly 1; check that authors can delete their own ideas through RLS.`,
+    );
+  }
+
+  await cleanupClient.auth.signOut();
 }
 
 test.describe("real Supabase login", () => {
@@ -91,5 +158,48 @@ test.describe("real Supabase password recovery", () => {
         "Jeśli konto istnieje, wysłaliśmy link do zmiany hasła na podany email.",
       ),
     ).toBeVisible({ timeout: 15_000 });
+  });
+});
+
+test.describe("real Supabase ideas", () => {
+  test.skip(
+    !supabasePublicConfig || !authEmail || !authPassword,
+    "Set public Supabase env vars plus E2E_AUTH_EMAIL and E2E_AUTH_PASSWORD to run real ideas E2E tests.",
+  );
+
+  test("authenticated user can create an idea and clean it up through RLS", async ({
+    page,
+  }) => {
+    const title = createUniqueIdeaTitle();
+    let shouldCleanup = false;
+
+    try {
+      await page.goto("/login");
+
+      await page.getByLabel("Email").fill(authEmail);
+      await page.getByLabel("Hasło").fill(authPassword);
+      await page.getByRole("button", { name: "Zaloguj się" }).click();
+
+      await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
+
+      await page.goto("/add");
+      await page.getByLabel("Tytuł").fill(title);
+      await page.getByLabel("Opis").fill("Pomysł utworzony przez test E2E.");
+      await page.getByLabel("Miejsce").fill("Testowe miejsce");
+      await page.getByLabel("Cena").fill("25,50");
+      await page.getByRole("button", { name: "Dodaj pomysł" }).click();
+
+      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      shouldCleanup = true;
+
+      await expect(
+        page.getByRole("heading", { name: title }),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText("Cena: 25,50 zł")).toBeVisible();
+    } finally {
+      if (shouldCleanup) {
+        await deleteGeneratedIdeaThroughRls(title);
+      }
+    }
   });
 });

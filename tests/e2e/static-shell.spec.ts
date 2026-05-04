@@ -1,8 +1,5 @@
 import { expect, test } from "@playwright/test";
 
-const demoFeedbackMessage =
-  "To jest wersja demonstracyjna. Zapisywanie pomysłów będzie dostępne po podłączeniu bazy.";
-
 test.describe("static shell", () => {
   test("renders the Polish login UI", async ({ page }) => {
     await page.goto("/login");
@@ -43,21 +40,35 @@ test.describe("static shell", () => {
     ).toBeVisible();
   });
 
-  test("renders placeholder idea cards", async ({ page }) => {
+  test("renders the ideas page shell", async ({ page }) => {
     await page.goto("/ideas");
 
     await expect(
       page.getByRole("heading", { name: "Pomysły" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Wieczór planszówek" }),
+      page.getByText("Najnowsze propozycje zapisane przez ekipę."),
     ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Wycieczka rowerowa" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Kino plenerowe" }),
-    ).toBeVisible();
+
+    await expect(async () => {
+      const hasKnownState = await Promise.all([
+        page
+          .getByText("Pomysły będą dostępne po skonfigurowaniu Supabase.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByText("Nie udało się wczytać pomysłów.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByText("Nie ma jeszcze żadnych pomysłów.")
+          .isVisible()
+          .catch(() => false),
+        page.locator("article").first().isVisible().catch(() => false),
+      ]);
+
+      expect(hasKnownState.some(Boolean)).toBe(true);
+    }).toPass();
   });
 
   test("uses the bottom navigation between shell routes", async ({ page }) => {
@@ -119,7 +130,7 @@ test.describe("static shell", () => {
     await expect(page.getByText("19:00")).toBeVisible();
   });
 
-  test("shows the add idea demo feedback", async ({ page }) => {
+  test("renders the add idea form", async ({ page }) => {
     await page.goto("/add");
 
     await expect(
@@ -130,10 +141,9 @@ test.describe("static shell", () => {
     await expect(page.getByLabel("Miejsce")).toBeVisible();
     await expect(page.getByLabel("Cena")).toBeVisible();
 
-    await page.getByRole("button", { name: "Dodaj pomysł" }).click();
-
-    await expect(page).toHaveURL(/\/add$/);
-    await expect(page.getByText(demoFeedbackMessage)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Dodaj pomysł" }),
+    ).toBeVisible();
   });
 
   test("renders the Polish not found page", async ({ page }) => {

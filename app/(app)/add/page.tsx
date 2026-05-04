@@ -8,7 +8,8 @@ export default function AddPage() {
           Dodaj pomysł
         </h1>
         <p className="text-base leading-7 text-slate-600">
-          Formularz jest gotowy do podłączenia do bazy w kolejnej fazie.
+          Zapisz propozycję dla ekipy. Do dodania prawdziwego pomysłu trzeba
+          się zalogować.
         </p>
       </div>
 
