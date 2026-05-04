@@ -1,8 +1,21 @@
+import { AuthStatusMessage } from "@/app/auth-status-message";
+import { readAuthRedirectMessage } from "@/lib/auth/redirect-message";
+
 import { placeholderIdeas } from "../placeholder-data";
 
-export default function IdeasPage() {
+type IdeasPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function IdeasPage({ searchParams }: IdeasPageProps) {
+  const resolvedSearchParams = await searchParams;
+
   return (
     <section className="space-y-5">
+      <AuthStatusMessage
+        authMessage={readAuthRedirectMessage(resolvedSearchParams)}
+      />
+
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-normal text-slate-950">
           Pomysły

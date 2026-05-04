@@ -1,23 +1,16 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
-
 import { AuthStatusMessage } from "@/app/auth-status-message";
 import { readAuthRedirectMessage } from "@/lib/auth/redirect-message";
-import { getCurrentSupabaseUser } from "@/lib/supabase/session";
 
-import { AuthForm } from "./auth-form";
+import { PasswordUpdateForm } from "./password-update-form";
 
-type LoginPageProps = {
+type PasswordUpdatePageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function LoginPage({ searchParams }: LoginPageProps) {
+export default async function PasswordUpdatePage({
+  searchParams,
+}: PasswordUpdatePageProps) {
   const resolvedSearchParams = await searchParams;
-  const user = await getCurrentSupabaseUser();
-
-  if (user) {
-    redirect("/ideas");
-  }
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center bg-slate-50 px-5 py-10">
@@ -27,10 +20,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             Ekipa
           </p>
           <h1 className="text-3xl font-bold tracking-normal text-slate-950">
-            Zaloguj się
+            Ustaw nowe hasło
           </h1>
           <p className="text-base leading-7 text-slate-600">
-            Zaloguj się albo utwórz konto, żeby korzystać z pomysłów ekipy.
+            Wpisz nowe hasło, którego chcesz używać do logowania.
           </p>
         </div>
 
@@ -38,14 +31,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           authMessage={readAuthRedirectMessage(resolvedSearchParams)}
         />
 
-        <AuthForm />
-
-        <Link
-          href="/ideas"
-          className="block text-center text-sm font-semibold text-teal-700"
-        >
-          Przejdź do wersji demonstracyjnej
-        </Link>
+        <PasswordUpdateForm />
       </section>
     </main>
   );

@@ -17,7 +17,29 @@ test.describe("static shell", () => {
       page.getByRole("button", { name: "Zaloguj się" }),
     ).toBeVisible();
     await expect(
+      page.getByRole("link", { name: "Zapomniałem hasła" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Rejestracja" }).click();
+
+    await expect(page.getByLabel("Nazwa wyświetlana")).toBeVisible();
+    await expect(page.getByLabel("Powtórz hasło")).toBeVisible();
+    await expect(
       page.getByRole("button", { name: "Utwórz konto" }),
+    ).toBeVisible();
+  });
+
+  test("opens password recovery from the login UI", async ({ page }) => {
+    await page.goto("/login");
+
+    await page.getByRole("link", { name: "Zapomniałem hasła" }).click();
+
+    await expect(page).toHaveURL(/\/reset-password$/);
+    await expect(
+      page.getByRole("heading", { name: "Odzyskaj dostęp do konta" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Wyślij link do zmiany hasła" }),
     ).toBeVisible();
   });
 
