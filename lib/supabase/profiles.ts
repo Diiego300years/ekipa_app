@@ -7,6 +7,8 @@ type ProfileRow = {
   display_name: string | null;
 };
 
+const fallbackDisplayName = "Użytkownik";
+
 export function getEmailLocalPart(email: string | undefined | null) {
   const cleanEmail = email?.trim();
 
@@ -18,10 +20,8 @@ export function getEmailLocalPart(email: string | undefined | null) {
 }
 
 export async function getUserDisplayName(user: User) {
-  const fallbackName = getEmailLocalPart(user.email);
-
   if (!getSupabasePublicConfig()) {
-    return fallbackName;
+    return fallbackDisplayName;
   }
 
   try {
@@ -33,12 +33,12 @@ export async function getUserDisplayName(user: User) {
       .maybeSingle<ProfileRow>();
 
     if (error) {
-      return fallbackName;
+      return fallbackDisplayName;
     }
 
-    return data?.display_name?.trim() || fallbackName;
+    return data?.display_name?.trim() || fallbackDisplayName;
   } catch {
-    return fallbackName;
+    return fallbackDisplayName;
   }
 }
 

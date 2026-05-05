@@ -225,15 +225,50 @@ test.describe("static shell", () => {
     ).toBeVisible();
   });
 
-  test("renders the schedule placeholder", async ({ page }) => {
+  test("renders the calendar shell", async ({ page }) => {
     await page.goto("/calendar");
 
     await expect(
       page.getByRole("heading", { name: "Kalendarz" }),
     ).toBeVisible();
-    await expect(page.getByText("Wieczór planszówek")).toBeVisible();
-    await expect(page.getByText("Piątek, 17 maja")).toBeVisible();
-    await expect(page.getByText("19:00")).toBeVisible();
+    await expect(
+      page.getByText("Terminy zaplanowane dla pomysłów ekipy."),
+    ).toBeVisible();
+
+    await expect(async () => {
+      const hasKnownState = await Promise.all([
+        page
+          .getByText("Kalendarz będzie dostępny po skonfigurowaniu Supabase.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByText("Nie udało się wczytać kalendarza.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByText("Nie ma jeszcze zaplanowanych terminów.")
+          .isVisible()
+          .catch(() => false),
+        page
+          .getByTestId("calendar-event")
+          .first()
+          .isVisible()
+          .catch(() => false),
+      ]);
+
+      expect(hasKnownState.some(Boolean)).toBe(true);
+    }).toPass();
+  });
+
+  test("renders a Polish schedule not-found state", async ({ page }) => {
+    await page.goto("/ideas/niepoprawny-identyfikator/schedule");
+
+    await expect(
+      page.getByRole("heading", { name: "Zaplanuj pomysł" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Nie znaleziono pomysłu do zaplanowania."),
+    ).toBeVisible();
   });
 
   test("renders the add idea form", async ({ page }) => {
