@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 
 import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
+import { measureServerTiming } from "@/lib/performance/server-timing";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { ideaLimits } from "@/lib/supabase/ideas";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -125,7 +126,9 @@ export async function createIdeaAction(
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await measureServerTiming("supabase.ideas.getUserForCreate", () =>
+      supabase.auth.getUser(),
+    );
 
     if (userError || !user) {
       return {
@@ -135,13 +138,17 @@ export async function createIdeaAction(
       };
     }
 
-    const { error } = await supabase.from("ideas").insert({
-      title,
-      description: description || null,
-      location: location || null,
-      price: "value" in parsedPrice ? parsedPrice.value : null,
-      created_by: user.id,
-    });
+    const { error } = await measureServerTiming(
+      "supabase.ideas.create",
+      () =>
+        supabase.from("ideas").insert({
+          title,
+          description: description || null,
+          location: location || null,
+          price: "value" in parsedPrice ? parsedPrice.value : null,
+          created_by: user.id,
+        }),
+    );
 
     if (error) {
       return {

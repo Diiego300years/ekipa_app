@@ -1,3 +1,5 @@
+import { measureServerTiming } from "@/lib/performance/server-timing";
+
 import { getSupabasePublicConfig } from "./config";
 import { createServerSupabaseClient } from "./server";
 
@@ -166,10 +168,14 @@ export async function getCalendarEventsForList(): Promise<CalendarEventsResult> 
 
   try {
     const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase
-      .from("calendar_events")
-      .select("id,idea_id,scheduled_by,start_at,end_at,note")
-      .order("start_at", { ascending: true });
+    const { data, error } = await measureServerTiming(
+      "supabase.calendar.eventsForList",
+      () =>
+        supabase
+          .from("calendar_events")
+          .select("id,idea_id,scheduled_by,start_at,end_at,note")
+          .order("start_at", { ascending: true }),
+    );
 
     if (error) {
       return {
@@ -187,10 +193,14 @@ export async function getCalendarEventsForList(): Promise<CalendarEventsResult> 
     let profilesById = new Map<string, string>();
 
     if (ideaIds.length > 0) {
-      const { data: ideaData, error: ideaError } = await supabase
-        .from("ideas")
-        .select("id,title,location,price,created_by")
-        .in("id", ideaIds);
+      const { data: ideaData, error: ideaError } = await measureServerTiming(
+        "supabase.calendar.ideasForEvents",
+        () =>
+          supabase
+            .from("ideas")
+            .select("id,title,location,price,created_by")
+            .in("id", ideaIds),
+      );
 
       if (ideaError) {
         return {
@@ -210,10 +220,14 @@ export async function getCalendarEventsForList(): Promise<CalendarEventsResult> 
     const profileIdList = Array.from(profileIds);
 
     if (profileIdList.length > 0) {
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("id,display_name")
-        .in("id", profileIdList);
+      const { data: profileData } = await measureServerTiming(
+        "supabase.calendar.profilesForEvents",
+        () =>
+          supabase
+            .from("profiles")
+            .select("id,display_name")
+            .in("id", profileIdList),
+      );
 
       profilesById = mapProfilesById((profileData ?? []) as ProfileRow[]);
     }
@@ -267,11 +281,15 @@ export async function getIdeaForScheduling(
 
   try {
     const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase
-      .from("ideas")
-      .select("id,title,location,price")
-      .eq("id", ideaId)
-      .maybeSingle<SchedulingIdeaRow>();
+    const { data, error } = await measureServerTiming(
+      "supabase.calendar.ideaForScheduling",
+      () =>
+        supabase
+          .from("ideas")
+          .select("id,title,location,price")
+          .eq("id", ideaId)
+          .maybeSingle<SchedulingIdeaRow>(),
+    );
 
     if (error) {
       return {

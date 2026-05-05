@@ -1,5 +1,7 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
+import { measureServerTiming } from "@/lib/performance/server-timing";
+
 import { getSupabasePublicConfig } from "./config";
 import { createServerSupabaseClient } from "./server";
 
@@ -26,11 +28,15 @@ export async function getUserDisplayName(user: User) {
 
   try {
     const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle<ProfileRow>();
+    const { data, error } = await measureServerTiming(
+      "supabase.profiles.getDisplayName",
+      () =>
+        supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", user.id)
+          .maybeSingle<ProfileRow>(),
+    );
 
     if (error) {
       return fallbackDisplayName;
@@ -53,13 +59,15 @@ export async function upsertOwnProfile(
     return { error: new Error("display_name must not be empty") };
   }
 
-  return supabase.from("profiles").upsert(
-    {
-      id: userId,
-      display_name: cleanDisplayName,
-    },
-    {
-      onConflict: "id",
-    },
+  return measureServerTiming("supabase.profiles.upsertOwnProfile", () =>
+    supabase.from("profiles").upsert(
+      {
+        id: userId,
+        display_name: cleanDisplayName,
+      },
+      {
+        onConflict: "id",
+      },
+    ),
   );
 }

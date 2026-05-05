@@ -1,3 +1,5 @@
+import { measureServerTiming } from "@/lib/performance/server-timing";
+
 import { getSupabasePublicConfig } from "./config";
 import { createServerSupabaseClient } from "./server";
 
@@ -146,11 +148,17 @@ export async function getIdeasForList(
     const supabase = await createServerSupabaseClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from("ideas")
-      .select("id,title,description,location,price,created_by,created_at")
-      .order("created_at", { ascending: false });
+    } = await measureServerTiming("supabase.ideas.getUser", () =>
+      supabase.auth.getUser(),
+    );
+    const { data, error } = await measureServerTiming(
+      "supabase.ideas.list",
+      () =>
+        supabase
+          .from("ideas")
+          .select("id,title,description,location,price,created_by,created_at")
+          .order("created_at", { ascending: false }),
+    );
 
     if (error) {
       return {
@@ -170,11 +178,14 @@ export async function getIdeasForList(
     const commentsByIdeaId = new Map<string, IdeaCommentRow[]>();
 
     if (options.includeComments && ideaIds.length > 0) {
-      const { data: commentData, error: commentError } = await supabase
-        .from("idea_comments")
-        .select("id,idea_id,user_id,body,created_at,updated_at")
-        .in("idea_id", ideaIds)
-        .order("created_at", { ascending: true });
+      const { data: commentData, error: commentError } =
+        await measureServerTiming("supabase.ideas.commentsForList", () =>
+          supabase
+            .from("idea_comments")
+            .select("id,idea_id,user_id,body,created_at,updated_at")
+            .in("idea_id", ideaIds)
+            .order("created_at", { ascending: true }),
+        );
 
       if (commentError) {
         return {
@@ -198,10 +209,14 @@ export async function getIdeasForList(
     const profileIdList = Array.from(profileIds);
 
     if (profileIdList.length > 0) {
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("id,display_name")
-        .in("id", profileIdList);
+      const { data: profileData } = await measureServerTiming(
+        "supabase.ideas.profilesForList",
+        () =>
+          supabase
+            .from("profiles")
+            .select("id,display_name")
+            .in("id", profileIdList),
+      );
 
       const profileRows = (profileData ?? []) as ProfileRow[];
 
@@ -215,10 +230,10 @@ export async function getIdeasForList(
     }
 
     if (ideaIds.length > 0) {
-      const { data: voteData, error: voteError } = await supabase
-        .from("votes")
-        .select("idea_id")
-        .in("idea_id", ideaIds);
+      const { data: voteData, error: voteError } = await measureServerTiming(
+        "supabase.ideas.votesForList",
+        () => supabase.from("votes").select("idea_id").in("idea_id", ideaIds),
+      );
 
       if (voteError) {
         return {
@@ -238,11 +253,13 @@ export async function getIdeasForList(
 
       if (user) {
         const { data: currentUserVoteData, error: currentUserVoteError } =
-          await supabase
-            .from("votes")
-            .select("idea_id")
-            .in("idea_id", ideaIds)
-            .eq("user_id", user.id);
+          await measureServerTiming("supabase.ideas.currentUserVotes", () =>
+            supabase
+              .from("votes")
+              .select("idea_id")
+              .in("idea_id", ideaIds)
+              .eq("user_id", user.id),
+          );
 
         if (currentUserVoteError) {
           return {

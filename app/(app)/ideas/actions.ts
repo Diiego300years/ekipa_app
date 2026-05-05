@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
+import { measureServerTiming } from "@/lib/performance/server-timing";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -84,7 +85,9 @@ export async function voteForIdeaAction(formData: FormData) {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await measureServerTiming("supabase.votes.getUserForCreate", () =>
+      supabase.auth.getUser(),
+    );
 
     if (userError || !user) {
       redirectPath = appendAuthRedirectMessage(
@@ -93,10 +96,14 @@ export async function voteForIdeaAction(formData: FormData) {
         "Zaloguj się, żeby oddać głos.",
       );
     } else {
-      const { error } = await supabase.from("votes").insert({
-        idea_id: ideaId,
-        user_id: user.id,
-      });
+      const { error } = await measureServerTiming(
+        "supabase.votes.create",
+        () =>
+          supabase.from("votes").insert({
+            idea_id: ideaId,
+            user_id: user.id,
+          }),
+      );
 
       if (error) {
         const mutationError = error as SupabaseMutationError;
@@ -152,7 +159,9 @@ export async function removeVoteForIdeaAction(formData: FormData) {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await measureServerTiming("supabase.votes.getUserForDelete", () =>
+      supabase.auth.getUser(),
+    );
 
     if (userError || !user) {
       redirectPath = appendAuthRedirectMessage(
@@ -161,11 +170,15 @@ export async function removeVoteForIdeaAction(formData: FormData) {
         "Zaloguj się, żeby cofnąć głos.",
       );
     } else {
-      const { error } = await supabase
-        .from("votes")
-        .delete()
-        .eq("idea_id", ideaId)
-        .eq("user_id", user.id);
+      const { error } = await measureServerTiming(
+        "supabase.votes.delete",
+        () =>
+          supabase
+            .from("votes")
+            .delete()
+            .eq("idea_id", ideaId)
+            .eq("user_id", user.id),
+      );
 
       if (error) {
         redirectPath = ideasRedirect(
@@ -230,17 +243,23 @@ export async function createIdeaCommentAction(
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await measureServerTiming("supabase.comments.getUserForCreate", () =>
+      supabase.auth.getUser(),
+    );
 
     if (userError || !user) {
       return commentAuthRequired();
     }
 
-    const { error } = await supabase.from("idea_comments").insert({
-      idea_id: ideaId,
-      user_id: user.id,
-      body,
-    });
+    const { error } = await measureServerTiming(
+      "supabase.comments.create",
+      () =>
+        supabase.from("idea_comments").insert({
+          idea_id: ideaId,
+          user_id: user.id,
+          body,
+        }),
+    );
 
     if (error) {
       return commentFormError(

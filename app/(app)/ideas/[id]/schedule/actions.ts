@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
+import { measureServerTiming } from "@/lib/performance/server-timing";
 import {
   calendarEventLimits,
   calendarTimeZone,
@@ -246,19 +247,25 @@ export async function scheduleIdeaAction(
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await measureServerTiming("supabase.calendar.getUserForCreate", () =>
+      supabase.auth.getUser(),
+    );
 
     if (userError || !user) {
       return scheduleAuthRequired();
     }
 
-    const { error } = await supabase.from("calendar_events").insert({
-      idea_id: ideaId,
-      scheduled_by: user.id,
-      start_at: startAt.toISOString(),
-      end_at: endAt ? endAt.toISOString() : null,
-      note: note || null,
-    });
+    const { error } = await measureServerTiming(
+      "supabase.calendar.createEvent",
+      () =>
+        supabase.from("calendar_events").insert({
+          idea_id: ideaId,
+          scheduled_by: user.id,
+          start_at: startAt.toISOString(),
+          end_at: endAt ? endAt.toISOString() : null,
+          note: note || null,
+        }),
+    );
 
     if (error) {
       return scheduleFormError(

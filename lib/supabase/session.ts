@@ -1,5 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 
+import { measureServerTiming } from "@/lib/performance/server-timing";
+
 import { getSupabasePublicConfig } from "./config";
 import { createServerSupabaseClient } from "./server";
 
@@ -13,7 +15,9 @@ export async function getCurrentSupabaseUser(): Promise<User | null> {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await measureServerTiming("supabase.auth.getCurrentUser", () =>
+      supabase.auth.getUser(),
+    );
 
     if (error) {
       return null;
