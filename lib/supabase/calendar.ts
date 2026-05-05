@@ -79,6 +79,8 @@ type ProfileRow = {
 const fallbackDisplayName = "Użytkownik";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const profileIdFallbackPattern = /^user-[0-9a-f]{8}$/i;
+const emailLocalPartLikePattern = /^[a-z0-9._%+-]+$/;
 
 function normalizePrice(price: number | string | null) {
   if (price === null) {
@@ -94,14 +96,36 @@ function mapProfilesById(profiles: ProfileRow[]) {
   const profilesById = new Map<string, string>();
 
   for (const profile of profiles) {
-    const displayName = profile.display_name?.trim();
-
-    if (displayName) {
-      profilesById.set(profile.id, displayName);
-    }
+    profilesById.set(profile.id, sanitizeDisplayName(profile.display_name));
   }
 
   return profilesById;
+}
+
+function sanitizeDisplayName(displayName: string | null) {
+  const cleanDisplayName = displayName?.trim();
+
+  if (!cleanDisplayName) {
+    return fallbackDisplayName;
+  }
+
+  if (
+    cleanDisplayName.includes("@") ||
+    uuidPattern.test(cleanDisplayName) ||
+    profileIdFallbackPattern.test(cleanDisplayName)
+  ) {
+    return fallbackDisplayName;
+  }
+
+  if (
+    cleanDisplayName === cleanDisplayName.toLowerCase() &&
+    emailLocalPartLikePattern.test(cleanDisplayName) &&
+    /[._%+-]/.test(cleanDisplayName)
+  ) {
+    return fallbackDisplayName;
+  }
+
+  return cleanDisplayName;
 }
 
 export function formatCalendarDate(isoDate: string) {

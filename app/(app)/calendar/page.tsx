@@ -1,11 +1,9 @@
 import { AuthStatusMessage } from "@/app/auth-status-message";
 import { readAuthRedirectMessage } from "@/lib/auth/redirect-message";
-import {
-  formatCalendarDate,
-  formatCalendarTimeRange,
-  getCalendarEventsForList,
-} from "@/lib/supabase/calendar";
-import { formatIdeaPrice } from "@/lib/supabase/ideas";
+import { getCalendarEventsForList } from "@/lib/supabase/calendar";
+
+import { getWarsawDateKey } from "./calendar-date-utils";
+import { CalendarView } from "./calendar-view";
 
 type CalendarPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -14,6 +12,7 @@ type CalendarPageProps = {
 export default async function CalendarPage({ searchParams }: CalendarPageProps) {
   const resolvedSearchParams = await searchParams;
   const eventsResult = await getCalendarEventsForList();
+  const events = eventsResult.status === "ready" ? eventsResult.events : [];
 
   return (
     <section className="space-y-5">
@@ -48,49 +47,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
         </p>
       ) : null}
 
-      {eventsResult.status === "ready" && eventsResult.events.length > 0 ? (
-        <div className="space-y-3">
-          {eventsResult.events.map((event) => (
-            <article
-              key={event.id}
-              data-testid="calendar-event"
-              className="rounded-md border border-slate-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 rounded-md bg-slate-100 px-3 py-2 text-center">
-                  <p className="text-sm font-semibold text-slate-700">
-                    {formatCalendarTimeRange(event.startAt, event.endAt)}
-                  </p>
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <h2 className="text-lg font-semibold text-slate-950">
-                    {event.ideaTitle}
-                  </h2>
-                  <div className="space-y-1 text-sm leading-6 text-slate-600">
-                    <p>{formatCalendarDate(event.startAt)}</p>
-                    <p>
-                      Miejsce:{" "}
-                      <span className="font-medium text-slate-900">
-                        {event.location || "nie podano"}
-                      </span>
-                    </p>
-                    <p className="font-medium text-slate-900">
-                      {formatIdeaPrice(event.price)}
-                    </p>
-                    <p>Autor: {event.authorName}</p>
-                    <p>Zaplanował: {event.schedulerName}</p>
-                  </div>
-                  {event.note ? (
-                    <p className="whitespace-pre-wrap break-words rounded-md bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
-                      {event.note}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : null}
+      <CalendarView events={events} todayKey={getWarsawDateKey(new Date())} />
     </section>
   );
 }

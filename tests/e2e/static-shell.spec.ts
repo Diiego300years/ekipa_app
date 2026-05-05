@@ -234,6 +234,22 @@ test.describe("static shell", () => {
     await expect(
       page.getByText("Terminy zaplanowane dla pomysłów ekipy."),
     ).toBeVisible();
+    await expect(page.getByTestId("calendar-view-toggle")).toBeVisible();
+    await expect(
+      page.getByTestId("calendar-view-toggle").getByRole("button", {
+        name: "Miesiąc",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByTestId("calendar-view-toggle").getByRole("button", {
+        name: "Tydzień",
+      }),
+    ).toBeVisible();
+    await expect(page.getByTestId("calendar-grid")).toHaveAttribute(
+      "data-view",
+      "month",
+    );
+    await expect(page.getByTestId("calendar-day").first()).toBeVisible();
 
     await expect(async () => {
       const hasKnownState = await Promise.all([
@@ -250,6 +266,10 @@ test.describe("static shell", () => {
           .isVisible()
           .catch(() => false),
         page
+          .getByText("Brak zaplanowanych terminów tego dnia.")
+          .isVisible()
+          .catch(() => false),
+        page
           .getByTestId("calendar-event")
           .first()
           .isVisible()
@@ -257,6 +277,71 @@ test.describe("static shell", () => {
       ]);
 
       expect(hasKnownState.some(Boolean)).toBe(true);
+    }).toPass();
+  });
+
+  test("switches the calendar between month and week views", async ({
+    page,
+  }) => {
+    await page.goto("/calendar");
+
+    const viewToggle = page.getByTestId("calendar-view-toggle");
+    const monthButton = viewToggle.getByRole("button", { name: "Miesiąc" });
+    const weekButton = viewToggle.getByRole("button", { name: "Tydzień" });
+
+    await expect(monthButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("calendar-grid")).toHaveAttribute(
+      "data-view",
+      "month",
+    );
+    expect(await page.getByTestId("calendar-day").count()).toBeGreaterThanOrEqual(
+      28,
+    );
+
+    await weekButton.click();
+
+    await expect(weekButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("calendar-grid")).toHaveAttribute(
+      "data-view",
+      "week",
+    );
+    await expect(page.getByTestId("calendar-day")).toHaveCount(7);
+
+    await monthButton.click();
+
+    await expect(monthButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("calendar-grid")).toHaveAttribute(
+      "data-view",
+      "month",
+    );
+  });
+
+  test("renders selected-day calendar details with Polish labels", async ({
+    page,
+  }) => {
+    await page.goto("/calendar");
+
+    for (const weekday of ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"]) {
+      await expect(page.getByText(weekday, { exact: true })).toBeVisible();
+    }
+
+    const selectedEvents = page.getByTestId("calendar-selected-events");
+
+    await expect(selectedEvents).toBeVisible();
+    await expect(selectedEvents.getByRole("heading")).toBeVisible();
+
+    await expect(async () => {
+      const hasEmptyState = await selectedEvents
+        .getByText("Brak zaplanowanych terminów tego dnia.")
+        .isVisible()
+        .catch(() => false);
+      const hasEventCard = await selectedEvents
+        .getByTestId("calendar-event")
+        .first()
+        .isVisible()
+        .catch(() => false);
+
+      expect(hasEmptyState || hasEventCard).toBe(true);
     }).toPass();
   });
 

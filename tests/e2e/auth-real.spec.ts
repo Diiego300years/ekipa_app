@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   createClient,
   type SupabaseClient,
@@ -45,6 +45,25 @@ function formatScheduleDateForUi(dateInput: string) {
     year: "numeric",
     timeZone: "Europe/Warsaw",
   }).format(new Date(`${dateInput}T12:00:00.000Z`));
+}
+
+async function selectCalendarDate(page: Page, dateKey: string) {
+  const dayButton = page.locator(
+    `[data-testid="calendar-day"][data-date="${dateKey}"]`,
+  );
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const isVisible = await dayButton.isVisible().catch(() => false);
+
+    if (isVisible) {
+      break;
+    }
+
+    await page.getByRole("button", { name: "Następny miesiąc" }).click();
+  }
+
+  await expect(dayButton).toBeVisible({ timeout: 15_000 });
+  await dayButton.click();
 }
 
 async function createAuthenticatedPublicClient(): Promise<{
@@ -153,7 +172,7 @@ async function deleteGeneratedIdeaThroughRls(title: string) {
 
     await deleteGeneratedIdeaByIdThroughRls(client, user.id, ideaId, title);
   } finally {
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: "local" });
   }
 }
 
@@ -204,7 +223,7 @@ async function deleteGeneratedCommentVoteAndIdeaThroughRls(
 
     await deleteGeneratedIdeaByIdThroughRls(client, user.id, ideaId, title);
   } finally {
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: "local" });
   }
 }
 
@@ -243,7 +262,7 @@ async function deleteGeneratedCalendarEventAndIdeaThroughRls(
 
     await deleteGeneratedIdeaByIdThroughRls(client, user.id, ideaId, title);
   } finally {
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: "local" });
   }
 }
 
@@ -453,7 +472,7 @@ test.describe("real Supabase voting", () => {
 
         expect(duplicateVoteError?.code).toBe("23505");
       } finally {
-        await client.auth.signOut();
+        await client.auth.signOut({ scope: "local" });
       }
 
       await page.goto("/voting");
@@ -612,6 +631,8 @@ test.describe("real Supabase scheduling", () => {
         timeout: 15_000,
       });
       shouldCleanupEvent = true;
+
+      await selectCalendarDate(page, scheduleDate);
 
       const calendarEvent = page
         .getByTestId("calendar-event")
