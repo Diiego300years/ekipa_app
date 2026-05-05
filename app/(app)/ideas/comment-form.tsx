@@ -1,32 +1,51 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useRef, useState } from "react";
 
 import { SubmitButton } from "@/app/submit-button";
 
 import { createIdeaCommentAction } from "./actions";
-import { emptyCommentActionState } from "./comment-state";
+import { emptyCommentActionState, type CreatedIdeaComment } from "./comment-state";
 
 type CommentFormProps = {
   ideaId: string;
   loginHref: string;
+  onCommentCreated: (comment: CreatedIdeaComment) => void;
 };
 
-export function CommentForm({ ideaId, loginHref }: CommentFormProps) {
-  const [state, formAction] = useActionState(
-    createIdeaCommentAction,
-    emptyCommentActionState,
-  );
+export function CommentForm({
+  ideaId,
+  loginHref,
+  onCommentCreated,
+}: CommentFormProps) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [state, setState] = useState(emptyCommentActionState);
   const textareaId = `idea-comment-${ideaId}`;
   const errorId = `idea-comment-${ideaId}-error`;
 
+  async function handleCommentAction(formData: FormData) {
+    const result = await createIdeaCommentAction(formData).catch(() => ({
+      status: "error" as const,
+      message: "Nie udało się dodać komentarza. Spróbuj ponownie.",
+      fieldErrors: {},
+    }));
+
+    setState(result);
+
+    if (result.status === "success" && result.comment) {
+      onCommentCreated(result.comment);
+      formRef.current?.reset();
+    }
+  }
+
   return (
     <form
-      action={formAction}
+      action={handleCommentAction}
       className="mt-3 space-y-2"
       data-testid="idea-comment-form"
       noValidate
+      ref={formRef}
     >
       <input name="ideaId" type="hidden" value={ideaId} />
       <label className="sr-only" htmlFor={textareaId}>
@@ -67,9 +86,11 @@ export function CommentForm({ ideaId, loginHref }: CommentFormProps) {
         <p
           aria-live="polite"
           className={`rounded-md px-3 py-2 text-sm font-medium leading-6 ${
-            state.status === "auth-required"
-              ? "bg-amber-50 text-amber-900"
-              : "bg-red-50 text-red-800"
+            state.status === "success"
+              ? "bg-teal-50 text-teal-900"
+              : state.status === "auth-required"
+                ? "bg-amber-50 text-amber-900"
+                : "bg-red-50 text-red-800"
           }`}
         >
           {state.message}

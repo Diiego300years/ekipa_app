@@ -12,18 +12,30 @@ import {
 } from "@/lib/supabase/ideas";
 import { getCurrentSupabaseUser } from "@/lib/supabase/session";
 
-import { removeVoteForIdeaAction, voteForIdeaAction } from "./actions";
-import { CommentForm } from "./comment-form";
-import { VoteButton } from "./vote-button";
+import { IdeaComments } from "./idea-comments";
+import { VoteControl } from "./vote-control";
 
 type IdeasPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+const fallbackDisplayName = "Użytkownik";
+
+function getKnownUserDisplayName(
+  user: Awaited<ReturnType<typeof getCurrentSupabaseUser>>,
+) {
+  const displayName = user?.user_metadata.display_name;
+
+  return typeof displayName === "string" && displayName.trim()
+    ? displayName.trim()
+    : fallbackDisplayName;
+}
+
 export default async function IdeasPage({ searchParams }: IdeasPageProps) {
   const resolvedSearchParams = await searchParams;
   const user = await getCurrentSupabaseUser();
   const ideasResult = await getIdeasForList({ includeComments: true });
+  const currentUserDisplayName = getKnownUserDisplayName(user);
   const voteLoginHref = appendAuthRedirectMessage(
     "/login",
     "error",
@@ -103,44 +115,34 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
               </div>
 
               <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
-                <p
-                  className="text-sm font-semibold text-slate-900"
-                  data-testid="idea-vote-count"
-                >
-                  {formatIdeaVoteCount(idea.voteCount)}
-                </p>
-
                 {user ? (
-                  idea.hasCurrentUserVote ? (
-                    <form
-                      action={removeVoteForIdeaAction}
-                      data-testid="idea-voted-state"
-                    >
-                      <input name="ideaId" type="hidden" value={idea.id} />
-                      <VoteButton
-                        label="Cofnij głos"
-                        pendingLabel="Cofanie głosu..."
-                        variant="secondary"
-                      />
-                    </form>
-                  ) : (
-                    <form action={voteForIdeaAction}>
-                      <input name="ideaId" type="hidden" value={idea.id} />
-                      <VoteButton />
-                    </form>
-                  )
+                  <VoteControl
+                    ideaId={idea.id}
+                    initialHasCurrentUserVote={idea.hasCurrentUserVote}
+                    initialVoteCount={idea.voteCount}
+                    key={`${idea.id}-${idea.voteCount}-${idea.hasCurrentUserVote}`}
+                  />
                 ) : (
-                  <div className="text-right">
-                    <Link
-                      className="inline-flex min-h-11 items-center rounded-md bg-teal-700 px-4 text-sm font-semibold text-white transition hover:bg-teal-800"
-                      href={voteLoginHref}
+                  <>
+                    <p
+                      className="text-sm font-semibold text-slate-900"
+                      data-testid="idea-vote-count"
                     >
-                      Głosuj
-                    </Link>
-                    <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
-                      Zaloguj się, żeby oddać głos.
+                      {formatIdeaVoteCount(idea.voteCount)}
                     </p>
-                  </div>
+
+                    <div className="text-right">
+                      <Link
+                        className="inline-flex min-h-11 items-center rounded-md bg-teal-700 px-4 text-sm font-semibold text-white transition hover:bg-teal-800"
+                        href={voteLoginHref}
+                      >
+                        Głosuj
+                      </Link>
+                      <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
+                        Zaloguj się, żeby oddać głos.
+                      </p>
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -153,39 +155,13 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
                 </Link>
               </div>
 
-              <div
-                className="mt-4 border-t border-slate-100 pt-4"
-                data-testid="idea-comments"
-              >
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Komentarze
-                </h3>
-
-                {idea.comments.length > 0 ? (
-                  <ul className="mt-3 space-y-2">
-                    {idea.comments.map((comment) => (
-                      <li
-                        className="border-l border-slate-200 pl-3 text-sm"
-                        data-testid="idea-comment"
-                        key={comment.id}
-                      >
-                        <p className="font-semibold text-slate-700">
-                          {comment.authorName}
-                        </p>
-                        <p className="whitespace-pre-wrap break-words leading-6 text-slate-700">
-                          {comment.body}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Brak komentarzy.
-                  </p>
-                )}
-
-                <CommentForm ideaId={idea.id} loginHref={commentLoginHref} />
-              </div>
+              <IdeaComments
+                currentUserDisplayName={currentUserDisplayName}
+                ideaId={idea.id}
+                initialComments={idea.comments}
+                key={`${idea.id}-${idea.comments.length}`}
+                loginHref={commentLoginHref}
+              />
             </article>
           ))}
         </div>

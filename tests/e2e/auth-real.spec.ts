@@ -433,7 +433,33 @@ test.describe("real Supabase voting", () => {
         "0 głosów",
       );
 
+      await ideaCard
+        .getByTestId("idea-vote-action")
+        .locator('input[name="ideaId"]')
+        .evaluate((input) => {
+          (input as HTMLInputElement).value = "invalid-idea-id";
+        });
       await ideaCard.getByRole("button", { name: "Głosuj" }).click();
+
+      await expect(
+        ideaCard.getByText("Nie udało się oddać głosu. Spróbuj ponownie."),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(ideaCard.getByTestId("idea-vote-count")).toHaveText(
+        "0 głosów",
+      );
+
+      await page.goto("/ideas");
+
+      const voteReadyIdeaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(voteReadyIdeaCard.getByTestId("idea-vote-count")).toHaveText(
+        "0 głosów",
+      );
+
+      await voteReadyIdeaCard.getByRole("button", { name: "Głosuj" }).click();
 
       await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
       await expect(page.getByText("Głos został oddany.")).toBeVisible({
@@ -474,6 +500,33 @@ test.describe("real Supabase voting", () => {
       } finally {
         await client.auth.signOut({ scope: "local" });
       }
+
+      const votedCardBeforeRollback = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await votedCardBeforeRollback
+        .getByTestId("idea-voted-state")
+        .locator('input[name="ideaId"]')
+        .evaluate((input) => {
+          (input as HTMLInputElement).value = "invalid-idea-id";
+        });
+      await votedCardBeforeRollback
+        .getByRole("button", { name: "Cofnij głos" })
+        .click();
+
+      await expect(
+        votedCardBeforeRollback.getByText(
+          "Nie udało się cofnąć głosu. Spróbuj ponownie.",
+        ),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        votedCardBeforeRollback.getByTestId("idea-vote-count"),
+      ).toHaveText("1 głos");
+      await expect(
+        votedCardBeforeRollback.getByRole("button", { name: "Cofnij głos" }),
+      ).toBeVisible();
 
       await page.goto("/voting");
 
