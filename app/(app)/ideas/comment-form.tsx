@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useActionState } from "react";
 
+import { SubmitButton } from "@/app/submit-button";
+
 import { createIdeaCommentAction } from "./actions";
 import { emptyCommentActionState } from "./comment-state";
 
@@ -12,7 +14,7 @@ type CommentFormProps = {
 };
 
 export function CommentForm({ ideaId, loginHref }: CommentFormProps) {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     createIdeaCommentAction,
     emptyCommentActionState,
   );
@@ -47,13 +49,11 @@ export function CommentForm({ ideaId, loginHref }: CommentFormProps) {
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          className="min-h-10 rounded-md bg-teal-700 px-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          disabled={isPending}
-          type="submit"
-        >
-          {isPending ? "Dodawanie..." : "Dodaj komentarz"}
-        </button>
+        <SubmitButton
+          className="min-h-10 min-w-[13.5rem] whitespace-nowrap rounded-md bg-teal-700 px-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+          label="Dodaj komentarz"
+          pendingLabel="Dodawanie komentarza..."
+        />
         {state.status === "auth-required" ? (
           <Link
             className="text-sm font-semibold text-teal-700"

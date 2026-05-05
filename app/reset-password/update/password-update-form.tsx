@@ -7,6 +7,7 @@ import {
   emptyAuthActionState,
   type AuthActionState,
 } from "@/app/login/auth-state";
+import { SubmitButton } from "@/app/submit-button";
 
 import { updatePasswordAction } from "./actions";
 
@@ -18,7 +19,7 @@ function fieldDescription(
 }
 
 export function PasswordUpdateForm() {
-  const [state, submitAction, isPending] = useActionState(
+  const [state, submitAction] = useActionState(
     updatePasswordAction,
     emptyAuthActionState,
   );
@@ -78,13 +79,11 @@ export function PasswordUpdateForm() {
         </p>
       ) : null}
 
-      <button
+      <SubmitButton
         className="min-h-12 w-full rounded-md bg-teal-700 px-4 text-base font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-        disabled={isPending}
-        type="submit"
-      >
-        {isPending ? "Zmienianie hasła..." : "Zmień hasło"}
-      </button>
+        label="Zmień hasło"
+        pendingLabel="Zapisywanie..."
+      />
 
       <AuthStatusMessage
         authMessage={

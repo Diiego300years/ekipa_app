@@ -1,6 +1,35 @@
 import { expect, test } from "@playwright/test";
 
+import { holdNextPost } from "./support/held-post";
+
 test.describe("add idea validation", () => {
+  test("shows add idea pending state while submit request is held", async ({
+    page,
+  }) => {
+    await page.goto("/add");
+
+    const heldPost = await holdNextPost(page, "**/add");
+    let clickPromise: Promise<void> | null = null;
+
+    try {
+      clickPromise = page.getByRole("button", { name: "Dodaj pomysł" }).click();
+      await heldPost.postStarted;
+
+      await expect(
+        page.getByRole("button", { name: "Zapisywanie..." }),
+      ).toBeDisabled();
+
+      heldPost.release();
+      await clickPromise;
+
+      await expect(page.getByText("Podaj tytuł pomysłu.")).toBeVisible();
+    } finally {
+      heldPost.release();
+      await clickPromise?.catch(() => undefined);
+      await heldPost.cleanup();
+    }
+  });
+
   test("requires a non-empty title", async ({ page }) => {
     await page.goto("/add");
 

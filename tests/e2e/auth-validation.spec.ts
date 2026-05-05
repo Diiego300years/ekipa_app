@@ -1,6 +1,36 @@
 import { expect, test } from "@playwright/test";
 
+import { holdNextPost } from "./support/held-post";
+
 test.describe("auth validation", () => {
+  test("shows login pending state while submit request is held", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+
+    const heldPost = await holdNextPost(page, "**/login");
+    let clickPromise: Promise<void> | null = null;
+
+    try {
+      clickPromise = page.getByRole("button", { name: "Zaloguj się" }).click();
+      await heldPost.postStarted;
+
+      await expect(
+        page.getByRole("button", { name: "Logowanie..." }),
+      ).toBeDisabled();
+
+      heldPost.release();
+      await clickPromise;
+
+      await expect(page.getByText("Podaj email.")).toBeVisible();
+      await expect(page.getByText("Podaj hasło.")).toBeVisible();
+    } finally {
+      heldPost.release();
+      await clickPromise?.catch(() => undefined);
+      await heldPost.cleanup();
+    }
+  });
+
   test("shows login validation without Supabase credentials", async ({ page }) => {
     await page.goto("/login");
 
@@ -38,6 +68,35 @@ test.describe("auth validation", () => {
     await expect(page.getByText("Podaj email.")).toBeVisible();
     await expect(page.getByText("Podaj hasło.")).toBeVisible();
     await expect(page.getByText("Powtórz hasło.")).toBeVisible();
+  });
+
+  test("shows registration pending state while submit request is held", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Rejestracja" }).click();
+
+    const heldPost = await holdNextPost(page, "**/login");
+    let clickPromise: Promise<void> | null = null;
+
+    try {
+      clickPromise = page.getByRole("button", { name: "Utwórz konto" }).click();
+      await heldPost.postStarted;
+
+      await expect(
+        page.getByRole("button", { name: "Tworzenie konta..." }),
+      ).toBeDisabled();
+
+      heldPost.release();
+      await clickPromise;
+
+      await expect(page.getByText("Podaj nazwę wyświetlaną.")).toBeVisible();
+      await expect(page.getByText("Podaj email.")).toBeVisible();
+    } finally {
+      heldPost.release();
+      await clickPromise?.catch(() => undefined);
+      await heldPost.cleanup();
+    }
   });
 
   test("requires display name during registration", async ({ page }) => {

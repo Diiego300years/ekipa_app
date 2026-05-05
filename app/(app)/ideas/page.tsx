@@ -119,7 +119,7 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
                       <input name="ideaId" type="hidden" value={idea.id} />
                       <VoteButton
                         label="Cofnij głos"
-                        pendingLabel="Cofanie..."
+                        pendingLabel="Cofanie głosu..."
                         variant="secondary"
                       />
                     </form>

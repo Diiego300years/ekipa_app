@@ -4,6 +4,7 @@ import { getUserDisplayName } from "@/lib/supabase/profiles";
 import { getCurrentSupabaseUser } from "@/lib/supabase/session";
 import { logoutAction } from "./auth-actions";
 import { BottomNavigation } from "./bottom-navigation";
+import { LogoutButton } from "./logout-button";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentSupabaseUser();
@@ -21,12 +22,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
           {user ? (
             <form action={logoutAction}>
-              <button
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                type="submit"
-              >
-                Wyloguj
-              </button>
+              <LogoutButton />
             </form>
           ) : (
             <Link

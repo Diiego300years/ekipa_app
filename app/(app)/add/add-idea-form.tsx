@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useActionState } from "react";
 
+import { SubmitButton } from "@/app/submit-button";
+
 import { createIdeaAction } from "./actions";
 import {
   emptyAddIdeaActionState,
@@ -10,7 +12,7 @@ import {
 } from "./add-idea-state";
 
 export function AddIdeaForm() {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     createIdeaAction,
     emptyAddIdeaActionState,
   );
@@ -105,13 +107,11 @@ export function AddIdeaForm() {
         </p>
       ) : null}
 
-      <button
+      <SubmitButton
         className="min-h-12 w-full rounded-md bg-teal-700 px-4 text-base font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-        disabled={isPending}
-        type="submit"
-      >
-        {isPending ? "Dodawanie..." : "Dodaj pomysł"}
-      </button>
+        label="Dodaj pomysł"
+        pendingLabel="Zapisywanie..."
+      />
 
       {state.message ? (
         <p

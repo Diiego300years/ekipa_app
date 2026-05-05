@@ -7,6 +7,7 @@ import {
   emptyAuthActionState,
   type AuthActionState,
 } from "@/app/login/auth-state";
+import { SubmitButton } from "@/app/submit-button";
 
 import { requestPasswordResetAction } from "./actions";
 
@@ -18,7 +19,7 @@ function fieldDescription(
 }
 
 export function PasswordResetRequestForm() {
-  const [state, submitAction, isPending] = useActionState(
+  const [state, submitAction] = useActionState(
     requestPasswordResetAction,
     emptyAuthActionState,
   );
@@ -50,13 +51,11 @@ export function PasswordResetRequestForm() {
         </p>
       ) : null}
 
-      <button
+      <SubmitButton
         className="min-h-12 w-full rounded-md bg-teal-700 px-4 text-base font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-        disabled={isPending}
-        type="submit"
-      >
-        {isPending ? "Wysyłanie..." : "Wyślij link do zmiany hasła"}
-      </button>
+        label="Wyślij link do zmiany hasła"
+        pendingLabel="Wysyłanie..."
+      />
 
       <AuthStatusMessage
         authMessage={

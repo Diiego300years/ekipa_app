@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 
+import { SubmitButton } from "@/app/submit-button";
 import type { SchedulingIdea } from "@/lib/supabase/calendar";
 
 import { scheduleIdeaAction } from "./actions";
@@ -28,7 +29,7 @@ function formatScheduleIdeaPrice(price: number | null) {
 }
 
 export function ScheduleIdeaForm({ idea, loginHref }: ScheduleIdeaFormProps) {
-  const [state, formAction, isPending] = useActionState(
+  const [state, formAction] = useActionState(
     scheduleIdeaAction,
     emptyScheduleIdeaActionState,
   );
@@ -140,13 +141,11 @@ export function ScheduleIdeaForm({ idea, loginHref }: ScheduleIdeaFormProps) {
           </p>
         ) : null}
 
-        <button
+        <SubmitButton
           className="min-h-12 w-full rounded-md bg-teal-700 px-4 text-base font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          disabled={isPending}
-          type="submit"
-        >
-          {isPending ? "Planowanie..." : "Zaplanuj pomysł"}
-        </button>
+          label="Zaplanuj pomysł"
+          pendingLabel="Zapisywanie..."
+        />
 
         {state.message ? (
           <p

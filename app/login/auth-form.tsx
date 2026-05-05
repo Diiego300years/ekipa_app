@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
+import { SubmitButton } from "@/app/submit-button";
+
 import { loginAction, registerAction } from "./actions";
 import { emptyAuthActionState, type AuthActionState } from "./auth-state";
 
@@ -17,11 +19,11 @@ function fieldDescription(
 
 export function AuthForm() {
   const [mode, setMode] = useState<AuthMode>("login");
-  const [loginState, submitLogin, isLoginPending] = useActionState(
+  const [loginState, submitLogin] = useActionState(
     loginAction,
     emptyAuthActionState,
   );
-  const [registerState, submitRegister, isRegisterPending] = useActionState(
+  const [registerState, submitRegister] = useActionState(
     registerAction,
     emptyAuthActionState,
   );
@@ -29,7 +31,6 @@ export function AuthForm() {
   const isRegisterMode = mode === "register";
   const state = isRegisterMode ? registerState : loginState;
   const formAction = isRegisterMode ? submitRegister : submitLogin;
-  const isPending = isRegisterMode ? isRegisterPending : isLoginPending;
 
   return (
     <div className="space-y-4">
@@ -171,19 +172,13 @@ export function AuthForm() {
           </>
         ) : null}
 
-        <button
+        <SubmitButton
           className="min-h-12 w-full rounded-md bg-teal-700 px-4 text-base font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          disabled={isPending}
-          type="submit"
-        >
-          {isPending
-            ? isRegisterMode
-              ? "Tworzenie konta..."
-              : "Logowanie..."
-            : isRegisterMode
-              ? "Utwórz konto"
-              : "Zaloguj się"}
-        </button>
+          label={isRegisterMode ? "Utwórz konto" : "Zaloguj się"}
+          pendingLabel={
+            isRegisterMode ? "Tworzenie konta..." : "Logowanie..."
+          }
+        />
 
         {state.message ? (
           <p
