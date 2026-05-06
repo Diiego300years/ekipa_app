@@ -1,5 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
+import { validateIdeaFormData } from "@/lib/idea-form-validation";
 import { measureServerTiming } from "@/lib/performance/server-timing";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -9,6 +14,8 @@ import type {
   CommentFieldErrors,
   CreatedIdeaComment,
 } from "./comment-state";
+import type { EditIdeaActionState } from "./edit-idea-state";
+import type { OwnerIdeaActionState } from "./owner-action-state";
 import type { ConfirmedVoteState, VoteActionResult } from "./vote-state";
 
 const uuidPattern =
@@ -122,6 +129,39 @@ function commentAuthRequired(): CommentActionState {
   return {
     status: "auth-required",
     message: "Zaloguj się, żeby dodać komentarz.",
+    fieldErrors: {},
+  };
+}
+
+function ownerIdeaActionError(message: string): OwnerIdeaActionState {
+  return {
+    status: "error",
+    message,
+  };
+}
+
+function ownerIdeaAuthRequired(message: string): OwnerIdeaActionState {
+  return {
+    status: "auth-required",
+    message,
+  };
+}
+
+function editIdeaError(
+  message: string,
+  fieldErrors: EditIdeaActionState["fieldErrors"] = {},
+): EditIdeaActionState {
+  return {
+    status: "error",
+    message,
+    fieldErrors,
+  };
+}
+
+function editIdeaAuthRequired(): EditIdeaActionState {
+  return {
+    status: "auth-required",
+    message: "Zaloguj się, żeby edytować pomysł.",
     fieldErrors: {},
   };
 }
@@ -391,4 +431,147 @@ export async function createIdeaCommentAction(
       "Nie udało się dodać komentarza. Spróbuj ponownie.",
     );
   }
+}
+
+export async function deleteIdeaAction(
+  _previousState: OwnerIdeaActionState,
+  formData: FormData,
+): Promise<OwnerIdeaActionState> {
+  const ideaId = readIdeaId(formData);
+
+  if (!uuidPattern.test(ideaId)) {
+    return ownerIdeaActionError(
+      "Nie udało się usunąć pomysłu. Spróbuj ponownie.",
+    );
+  }
+
+  if (!getSupabasePublicConfig()) {
+    return ownerIdeaActionError(
+      "Usuwanie będzie dostępne po skonfigurowaniu Supabase.",
+    );
+  }
+
+  let redirectPath = "";
+
+  try {
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await measureServerTiming("supabase.ideas.getUserForDelete", () =>
+      supabase.auth.getUser(),
+    );
+
+    if (userError || !user) {
+      return ownerIdeaAuthRequired("Zaloguj się, żeby usunąć pomysł.");
+    }
+
+    const { data, error } = await measureServerTiming(
+      "supabase.ideas.deleteOwnIdea",
+      () =>
+        supabase
+          .from("ideas")
+          .delete()
+          .eq("id", ideaId)
+          .eq("created_by", user.id)
+          .select("id"),
+    );
+
+    if (error || (data ?? []).length !== 1) {
+      return ownerIdeaActionError(
+        "Nie udało się usunąć pomysłu. Sprawdź, czy nadal jesteś jego właścicielem.",
+      );
+    }
+
+    revalidatePath("/ideas");
+    revalidatePath("/voting");
+    revalidatePath("/calendar");
+    redirectPath = appendAuthRedirectMessage(
+      "/ideas",
+      "success",
+      "Pomysł został usunięty.",
+    );
+  } catch {
+    return ownerIdeaActionError(
+      "Nie udało się usunąć pomysłu. Spróbuj ponownie.",
+    );
+  }
+
+  redirect(redirectPath);
+}
+
+export async function updateIdeaAction(
+  _previousState: EditIdeaActionState,
+  formData: FormData,
+): Promise<EditIdeaActionState> {
+  const ideaId = readIdeaId(formData);
+  const validation = validateIdeaFormData(formData);
+
+  if (validation.status === "invalid") {
+    return editIdeaError("Popraw pola formularza.", validation.fieldErrors);
+  }
+
+  if (!uuidPattern.test(ideaId)) {
+    return editIdeaError(
+      "Nie udało się zapisać zmian. Spróbuj ponownie.",
+    );
+  }
+
+  if (!getSupabasePublicConfig()) {
+    return editIdeaError(
+      "Edycja będzie dostępna po skonfigurowaniu Supabase.",
+    );
+  }
+
+  let redirectPath = "";
+
+  try {
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+      error: userError,
+    } = await measureServerTiming("supabase.ideas.getUserForUpdate", () =>
+      supabase.auth.getUser(),
+    );
+
+    if (userError || !user) {
+      return editIdeaAuthRequired();
+    }
+
+    const { data, error } = await measureServerTiming(
+      "supabase.ideas.updateOwnIdea",
+      () =>
+        supabase
+          .from("ideas")
+          .update({
+            title: validation.values.title,
+            description: validation.values.description,
+            location: validation.values.location,
+            price: validation.values.price,
+          })
+          .eq("id", ideaId)
+          .select("id"),
+    );
+
+    if (error || (data ?? []).length !== 1) {
+      return editIdeaError(
+        "Nie udało się zapisać zmian. Sprawdź, czy nadal jesteś właścicielem pomysłu.",
+      );
+    }
+
+    revalidatePath("/ideas");
+    revalidatePath("/voting");
+    revalidatePath("/calendar");
+    redirectPath = appendAuthRedirectMessage(
+      "/ideas",
+      "success",
+      "Pomysł został zaktualizowany.",
+    );
+  } catch {
+    return editIdeaError(
+      "Nie udało się zapisać zmian. Spróbuj ponownie.",
+    );
+  }
+
+  redirect(redirectPath);
 }

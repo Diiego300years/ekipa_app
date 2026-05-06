@@ -1,14 +1,12 @@
 import type { IdeaFieldErrors } from "@/lib/idea-form-validation";
 
-export type AddIdeaFieldErrors = IdeaFieldErrors;
-
-export type AddIdeaActionState = {
+export type EditIdeaActionState = {
   status: "idle" | "error" | "auth-required";
   message: string;
-  fieldErrors: AddIdeaFieldErrors;
+  fieldErrors: IdeaFieldErrors;
 };
 
-export const emptyAddIdeaActionState: AddIdeaActionState = {
+export const emptyEditIdeaActionState: EditIdeaActionState = {
   status: "idle",
   message: "",
   fieldErrors: {},

@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { measureServerTiming } from "@/lib/performance/server-timing";
 
 import { getSupabasePublicConfig } from "./config";
@@ -8,6 +10,16 @@ export const calendarEventLimits = {
 } as const;
 
 export const calendarTimeZone = "Europe/Warsaw";
+
+export type CalendarEventResponseStatus = "attending" | "declined";
+
+export type CalendarEventResponseSummary = {
+  attendingCount: number;
+  declinedCount: number;
+  attendingNames: string[];
+  declinedNames: string[];
+  currentUserStatus: CalendarEventResponseStatus | null;
+};
 
 export type CalendarListEvent = {
   id: string;
@@ -20,6 +32,7 @@ export type CalendarListEvent = {
   startAt: string;
   endAt: string | null;
   note: string | null;
+  responses: CalendarEventResponseSummary;
 };
 
 export type CalendarEventsResult =
@@ -78,6 +91,16 @@ type ProfileRow = {
   display_name: string | null;
 };
 
+type CalendarEventResponseRow = {
+  event_id: string;
+  user_id: string;
+  status: string;
+};
+
+type CalendarEventsListOptions = {
+  currentUserId?: string | null;
+};
+
 const fallbackDisplayName = "Użytkownik";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -121,13 +144,68 @@ function sanitizeDisplayName(displayName: string | null) {
 
   if (
     cleanDisplayName === cleanDisplayName.toLowerCase() &&
-    emailLocalPartLikePattern.test(cleanDisplayName) &&
-    /[._%+-]/.test(cleanDisplayName)
+    emailLocalPartLikePattern.test(cleanDisplayName)
   ) {
     return fallbackDisplayName;
   }
 
   return cleanDisplayName;
+}
+
+function isCalendarEventResponseStatus(
+  status: string,
+): status is CalendarEventResponseStatus {
+  return status === "attending" || status === "declined";
+}
+
+export function createEmptyCalendarEventResponseSummary(): CalendarEventResponseSummary {
+  return {
+    attendingCount: 0,
+    declinedCount: 0,
+    attendingNames: [],
+    declinedNames: [],
+    currentUserStatus: null,
+  };
+}
+
+function buildCalendarEventResponseSummary({
+  responseRows,
+  profilesById,
+  currentUserId,
+}: {
+  responseRows: CalendarEventResponseRow[];
+  profilesById: Map<string, string>;
+  currentUserId: string | null;
+}): CalendarEventResponseSummary {
+  const attendingNames: string[] = [];
+  const declinedNames: string[] = [];
+  let currentUserStatus: CalendarEventResponseStatus | null = null;
+
+  for (const response of responseRows) {
+    if (!isCalendarEventResponseStatus(response.status)) {
+      continue;
+    }
+
+    const displayName = profilesById.get(response.user_id) ?? fallbackDisplayName;
+
+    if (response.status === "attending") {
+      attendingNames.push(displayName);
+    } else {
+      declinedNames.push(displayName);
+    }
+
+    if (currentUserId && response.user_id === currentUserId) {
+      currentUserStatus = response.status;
+    }
+  }
+
+  return {
+    attendingCount: attendingNames.length,
+    declinedCount: declinedNames.length,
+    attendingNames,
+    declinedNames,
+    currentUserStatus,
+  };
 }
 
 export function formatCalendarDate(isoDate: string) {
@@ -158,7 +236,9 @@ export function formatCalendarTimeRange(startAt: string, endAt: string | null) {
   return `${startTime} - ${formatCalendarTime(endAt)}`;
 }
 
-export async function getCalendarEventsForList(): Promise<CalendarEventsResult> {
+export async function getCalendarEventsForList(
+  options: CalendarEventsListOptions = {},
+): Promise<CalendarEventsResult> {
   if (!getSupabasePublicConfig()) {
     return {
       status: "unconfigured",
@@ -190,6 +270,7 @@ export async function getCalendarEventsForList(): Promise<CalendarEventsResult> 
       eventRows.map((event) => event.scheduled_by).filter(Boolean),
     );
     const ideasById = new Map<string, IdeaSummaryRow>();
+    const responsesByEventId = new Map<string, CalendarEventResponseRow[]>();
     let profilesById = new Map<string, string>();
 
     if (ideaIds.length > 0) {
@@ -214,6 +295,34 @@ export async function getCalendarEventsForList(): Promise<CalendarEventsResult> 
       for (const idea of ideaRows) {
         ideasById.set(idea.id, idea);
         profileIds.add(idea.created_by);
+      }
+    }
+
+    if (eventRows.length > 0) {
+      const eventIds = eventRows.map((event) => event.id);
+      const { data: responseData, error: responseError } =
+        await measureServerTiming(
+          "supabase.calendar.responsesForEvents",
+          () =>
+            supabase
+              .from("calendar_event_responses")
+              .select("event_id,user_id,status")
+              .in("event_id", eventIds)
+              .order("created_at", { ascending: true }),
+        );
+
+      if (!responseError) {
+        const responseRows = (responseData ?? []) as CalendarEventResponseRow[];
+
+        for (const response of responseRows) {
+          profileIds.add(response.user_id);
+
+          const eventResponses =
+            responsesByEventId.get(response.event_id) ?? [];
+
+          eventResponses.push(response);
+          responsesByEventId.set(response.event_id, eventResponses);
+        }
       }
     }
 
@@ -251,6 +360,11 @@ export async function getCalendarEventsForList(): Promise<CalendarEventsResult> 
           startAt: event.start_at,
           endAt: event.end_at,
           note: event.note,
+          responses: buildCalendarEventResponseSummary({
+            responseRows: responsesByEventId.get(event.id) ?? [],
+            profilesById,
+            currentUserId: options.currentUserId ?? null,
+          }),
         };
       }),
     };
@@ -260,6 +374,51 @@ export async function getCalendarEventsForList(): Promise<CalendarEventsResult> 
       events: [],
     };
   }
+}
+
+export async function getCalendarEventResponseSummary(
+  supabase: SupabaseClient,
+  eventId: string,
+  currentUserId: string,
+) {
+  const { data, error } = await measureServerTiming(
+    "supabase.calendar.responsesForEvent",
+    () =>
+      supabase
+        .from("calendar_event_responses")
+        .select("event_id,user_id,status")
+        .eq("event_id", eventId)
+        .order("created_at", { ascending: true }),
+  );
+
+  if (error) {
+    return null;
+  }
+
+  const responseRows = (data ?? []) as CalendarEventResponseRow[];
+  const profileIds = Array.from(
+    new Set(responseRows.map((response) => response.user_id)),
+  );
+  let profilesById = new Map<string, string>();
+
+  if (profileIds.length > 0) {
+    const { data: profileData } = await measureServerTiming(
+      "supabase.calendar.profilesForResponses",
+      () =>
+        supabase
+          .from("profiles")
+          .select("id,display_name")
+          .in("id", profileIds),
+    );
+
+    profilesById = mapProfilesById((profileData ?? []) as ProfileRow[]);
+  }
+
+  return buildCalendarEventResponseSummary({
+    responseRows,
+    profilesById,
+    currentUserId,
+  });
 }
 
 export async function getIdeaForScheduling(

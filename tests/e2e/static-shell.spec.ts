@@ -71,6 +71,13 @@ test.describe("static shell", () => {
     }).toPass();
   });
 
+  test("does not show owner idea actions to guests", async ({ page }) => {
+    await page.goto("/ideas");
+
+    await expect(page.getByRole("link", { name: "Edytuj" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Usuń" })).toHaveCount(0);
+  });
+
   test("uses the bottom navigation between shell routes", async ({ page }) => {
     await page.goto("/ideas");
 
@@ -278,6 +285,31 @@ test.describe("static shell", () => {
 
       expect(hasKnownState.some(Boolean)).toBe(true);
     }).toPass();
+  });
+
+  test("shows Polish login guidance when a guest responds to an event", async ({
+    page,
+  }) => {
+    await page.goto("/calendar");
+
+    const calendarEvent = page.getByTestId("calendar-event").first();
+    const hasCalendarEvent = await calendarEvent
+      .isVisible()
+      .catch(() => false);
+
+    test.skip(
+      !hasCalendarEvent,
+      "Guest RSVP guidance needs at least one visible public calendar event.",
+    );
+
+    await calendarEvent.getByRole("button", { name: "Będę" }).click();
+
+    await expect(
+      calendarEvent.getByText("Zaloguj się, żeby odpowiedzieć na termin."),
+    ).toBeVisible();
+    await expect(
+      calendarEvent.getByRole("link", { name: "Przejdź do logowania" }),
+    ).toHaveAttribute("href", /\/login/);
   });
 
   test("switches the calendar between month and week views", async ({

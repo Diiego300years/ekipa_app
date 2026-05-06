@@ -1,6 +1,10 @@
 import { AuthStatusMessage } from "@/app/auth-status-message";
-import { readAuthRedirectMessage } from "@/lib/auth/redirect-message";
+import {
+  appendAuthRedirectMessage,
+  readAuthRedirectMessage,
+} from "@/lib/auth/redirect-message";
 import { getCalendarEventsForList } from "@/lib/supabase/calendar";
+import { getCurrentSupabaseUser } from "@/lib/supabase/session";
 
 import { getWarsawDateKey } from "./calendar-date-utils";
 import { CalendarView } from "./calendar-view";
@@ -11,8 +15,16 @@ type CalendarPageProps = {
 
 export default async function CalendarPage({ searchParams }: CalendarPageProps) {
   const resolvedSearchParams = await searchParams;
-  const eventsResult = await getCalendarEventsForList();
+  const user = await getCurrentSupabaseUser();
+  const eventsResult = await getCalendarEventsForList({
+    currentUserId: user?.id ?? null,
+  });
   const events = eventsResult.status === "ready" ? eventsResult.events : [];
+  const rsvpLoginHref = appendAuthRedirectMessage(
+    "/login",
+    "error",
+    "Zaloguj się, żeby odpowiedzieć na termin.",
+  );
 
   return (
     <section className="space-y-5">
@@ -47,7 +59,12 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
         </p>
       ) : null}
 
-      <CalendarView events={events} todayKey={getWarsawDateKey(new Date())} />
+      <CalendarView
+        events={events}
+        isAuthenticated={Boolean(user)}
+        rsvpLoginHref={rsvpLoginHref}
+        todayKey={getWarsawDateKey(new Date())}
+      />
     </section>
   );
 }

@@ -66,6 +66,69 @@ async function selectCalendarDate(page: Page, dateKey: string) {
   await dayButton.click();
 }
 
+async function logInAsAuthUser(page: Page) {
+  await page.goto("/login");
+
+  await page.getByLabel("Email").fill(authEmail);
+  await page.getByLabel("Hasło").fill(authPassword);
+  await page.getByRole("button", { name: "Zaloguj się" }).click();
+
+  await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
+}
+
+async function createIdeaThroughUi(page: Page, title: string) {
+  await page.goto("/add");
+  await page.getByLabel("Tytuł").fill(title);
+  await page.getByLabel("Opis").fill("Pomysł utworzony przez test E2E.");
+  await page.getByLabel("Miejsce").fill("Testowe miejsce");
+  await page.getByLabel("Cena").fill("25,50");
+  await page.getByRole("button", { name: "Dodaj pomysł" }).click();
+
+  await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: title })).toBeVisible({
+    timeout: 15_000,
+  });
+}
+
+async function scheduleGeneratedIdeaThroughUi({
+  page,
+  title,
+  scheduleDate,
+  eventNote,
+}: {
+  page: Page;
+  title: string;
+  scheduleDate: string;
+  eventNote: string;
+}) {
+  const ideaCard = page
+    .getByTestId("idea-card")
+    .filter({ hasText: title })
+    .first();
+
+  await expect(ideaCard).toBeVisible({ timeout: 15_000 });
+  await ideaCard.getByRole("link", { name: "Zaplanuj" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: `Zaplanuj: ${title}` }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  const scheduleForm = page.getByTestId("schedule-idea-form");
+
+  await scheduleForm.getByLabel("Data").fill(scheduleDate);
+  await scheduleForm.getByLabel("Godzina rozpoczęcia").fill("18:30");
+  await scheduleForm.getByLabel("Godzina zakończenia").fill("20:00");
+  await scheduleForm.getByLabel("Notatka").fill(eventNote);
+  await scheduleForm
+    .getByRole("button", { name: "Zaplanuj pomysł" })
+    .click();
+
+  await expect(page).toHaveURL(/\/calendar/, { timeout: 15_000 });
+  await expect(page.getByText("Pomysł został zaplanowany.")).toBeVisible({
+    timeout: 15_000,
+  });
+}
+
 async function createAuthenticatedPublicClient(): Promise<{
   client: SupabaseClient;
   user: User;
@@ -106,6 +169,69 @@ async function createAuthenticatedPublicClient(): Promise<{
     client,
     user: authData.user,
   };
+}
+
+async function hasCalendarEventResponsesTableThroughRls() {
+  if (!supabasePublicConfig) {
+    return false;
+  }
+
+  const client = createClient(
+    supabasePublicConfig.url,
+    supabasePublicConfig.publicKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    },
+  );
+  const { error } = await client
+    .from("calendar_event_responses")
+    .select("event_id")
+    .limit(1);
+
+  if (!error) {
+    return true;
+  }
+
+  if (error.code === "42P01" || error.code === "PGRST205") {
+    return false;
+  }
+
+  throw new Error(
+    `Could not read RSVP responses through RLS: ${error.message}`,
+  );
+}
+
+async function canUpdateGeneratedIdeaThroughRls(title: string) {
+  const { client, user } = await createAuthenticatedPublicClient();
+
+  try {
+    const ideaId = await findGeneratedIdeaIdThroughRls(client, user.id, title);
+    const { data, error } = await client
+      .from("ideas")
+      .update({
+        title,
+      })
+      .eq("id", ideaId)
+      .select("id");
+
+    if (!error) {
+      return (data ?? []).length === 1;
+    }
+
+    if (error.code === "42501") {
+      return false;
+    }
+
+    throw new Error(
+      `Could not verify owner idea update through RLS: ${error.message}`,
+    );
+  } finally {
+    await client.auth.signOut({ scope: "local" });
+  }
 }
 
 async function findGeneratedIdeaIdThroughRls(
@@ -379,7 +505,125 @@ test.describe("real Supabase ideas", () => {
       await expect(
         page.getByRole("heading", { name: title }),
       ).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByText("Cena: 25,50 zł")).toBeVisible();
+
+      const createdIdeaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(createdIdeaCard.getByText("Cena: 25,50 zł")).toBeVisible();
+    } finally {
+      if (shouldCleanup) {
+        await deleteGeneratedIdeaThroughRls(title);
+      }
+    }
+  });
+
+  test("owner can create and edit an idea", async ({ page }) => {
+    const title = createUniqueIdeaTitle();
+    const updatedTitle = `${title} po edycji`;
+    let cleanupTitle = title;
+    let shouldCleanup = false;
+
+    try {
+      await logInAsAuthUser(page);
+      await createIdeaThroughUi(page, title);
+      shouldCleanup = true;
+
+      test.skip(
+        !(await canUpdateGeneratedIdeaThroughRls(title)),
+        "Apply the owner idea update RLS migration to run real edit E2E tests.",
+      );
+
+      const ideaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+      const editLink = ideaCard.getByRole("link", { name: "Edytuj" });
+
+      await expect(editLink).toBeVisible();
+      await editLink.click();
+
+      await expect(
+        page.getByRole("heading", { name: `Edytuj: ${title}` }),
+      ).toBeVisible({ timeout: 15_000 });
+
+      const editForm = page.getByTestId("edit-idea-form");
+
+      await editForm.getByLabel("Tytuł").fill("   ");
+      await editForm.getByRole("button", { name: "Zapisz zmiany" }).click();
+      await expect(editForm.getByText("Podaj tytuł pomysłu.")).toBeVisible();
+
+      await editForm.getByLabel("Tytuł").fill(updatedTitle);
+      await editForm
+        .getByLabel("Opis")
+        .fill("Pomysł zaktualizowany przez test E2E.");
+      await editForm.getByLabel("Miejsce").fill("Miejsce po edycji");
+      await editForm.getByLabel("Cena").fill("30,75 zł");
+      await editForm.getByRole("button", { name: "Zapisz zmiany" }).click();
+
+      await expect(page).toHaveURL(/\/ideas(?:\?.*)?$/, {
+        timeout: 15_000,
+      });
+      cleanupTitle = updatedTitle;
+      await expect(page.getByText("Pomysł został zaktualizowany.")).toBeVisible({
+        timeout: 15_000,
+      });
+
+      const updatedIdeaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: updatedTitle })
+        .first();
+
+      await expect(updatedIdeaCard).toBeVisible({ timeout: 15_000 });
+      await expect(updatedIdeaCard.getByText("Miejsce po edycji")).toBeVisible();
+      await expect(updatedIdeaCard.getByText("Cena: 30,75 zł")).toBeVisible();
+    } finally {
+      if (shouldCleanup) {
+        await deleteGeneratedIdeaThroughRls(cleanupTitle);
+      }
+    }
+  });
+
+  test("owner can delete their own generated idea", async ({ page }) => {
+    const title = createUniqueIdeaTitle();
+    let shouldCleanup = false;
+
+    try {
+      await logInAsAuthUser(page);
+      await createIdeaThroughUi(page, title);
+      shouldCleanup = true;
+
+      const ideaCard = page
+        .getByTestId("idea-card")
+        .filter({ hasText: title })
+        .first();
+
+      await expect(ideaCard.getByRole("link", { name: "Edytuj" })).toBeVisible();
+      await ideaCard.getByRole("button", { name: "Usuń" }).click();
+
+      await expect(
+        ideaCard.getByText(
+          "Usunięcie pomysłu usunie także powiązane głosy, komentarze i zaplanowane terminy w kalendarzu.",
+        ),
+      ).toBeVisible();
+
+      await ideaCard.getByRole("button", { name: "Anuluj" }).click();
+      await expect(ideaCard.getByTestId("idea-delete-confirmation")).toHaveCount(
+        0,
+      );
+
+      await ideaCard.getByRole("button", { name: "Usuń" }).click();
+      await ideaCard.getByRole("button", { name: "Usuń pomysł" }).click();
+
+      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      await expect(page.getByText("Pomysł został usunięty.")).toBeVisible({
+        timeout: 15_000,
+      });
+      shouldCleanup = false;
+      await expect(
+        page.getByTestId("idea-card").filter({ hasText: title }),
+      ).toHaveCount(0);
     } finally {
       if (shouldCleanup) {
         await deleteGeneratedIdeaThroughRls(title);
@@ -699,6 +943,88 @@ test.describe("real Supabase scheduling", () => {
       await expect(calendarEvent.getByText("Cena: 15,00 zł")).toBeVisible();
       await expect(calendarEvent.getByText("Autor:")).toBeVisible();
       await expect(calendarEvent.getByText("Zaplanował:")).toBeVisible();
+    } finally {
+      if (shouldCleanup) {
+        await deleteGeneratedCalendarEventAndIdeaThroughRls(
+          title,
+          shouldCleanupEvent ? eventNote : null,
+        );
+      }
+    }
+  });
+
+  test("authenticated user can RSVP Będę and change RSVP to Nie będę", async ({
+    page,
+  }) => {
+    test.skip(
+      !(await hasCalendarEventResponsesTableThroughRls()),
+      "Apply the calendar_event_responses migration to run real RSVP E2E tests.",
+    );
+
+    const title = createUniqueIdeaTitle();
+    const scheduleDate = createScheduleDateInput();
+    const eventNote = `RSVP E2E ${Date.now()} ${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    let shouldCleanup = false;
+    let shouldCleanupEvent = false;
+
+    try {
+      await logInAsAuthUser(page);
+      await createIdeaThroughUi(page, title);
+      shouldCleanup = true;
+
+      await scheduleGeneratedIdeaThroughUi({
+        page,
+        title,
+        scheduleDate,
+        eventNote,
+      });
+      shouldCleanupEvent = true;
+
+      await selectCalendarDate(page, scheduleDate);
+
+      const calendarEvent = page
+        .getByTestId("calendar-event")
+        .filter({ hasText: title })
+        .first();
+      const rsvpControl = calendarEvent.getByTestId("calendar-rsvp-control");
+
+      await expect(calendarEvent).toBeVisible({ timeout: 15_000 });
+      await expect(rsvpControl.getByTestId("calendar-rsvp-attending-count"))
+        .toHaveText("0");
+      await expect(rsvpControl.getByTestId("calendar-rsvp-declined-count"))
+        .toHaveText("0");
+
+      await rsvpControl.getByRole("button", { name: "Będę" }).click();
+
+      await expect(
+        rsvpControl.getByText("Zapisano odpowiedź: Będę."),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        rsvpControl.getByTestId("calendar-rsvp-attending-count"),
+      ).toHaveText("1");
+      await expect(
+        rsvpControl.getByTestId("calendar-rsvp-declined-count"),
+      ).toHaveText("0");
+      await expect(
+        rsvpControl.getByRole("button", { name: "Będę" }),
+      ).toHaveAttribute("aria-pressed", "true");
+
+      await rsvpControl.getByRole("button", { name: "Nie będę" }).click();
+
+      await expect(
+        rsvpControl.getByText("Zapisano odpowiedź: Nie będę."),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        rsvpControl.getByTestId("calendar-rsvp-attending-count"),
+      ).toHaveText("0");
+      await expect(
+        rsvpControl.getByTestId("calendar-rsvp-declined-count"),
+      ).toHaveText("1");
+      await expect(
+        rsvpControl.getByRole("button", { name: "Nie będę" }),
+      ).toHaveAttribute("aria-pressed", "true");
     } finally {
       if (shouldCleanup) {
         await deleteGeneratedCalendarEventAndIdeaThroughRls(

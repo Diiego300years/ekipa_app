@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { CalendarListEvent } from "@/lib/supabase/calendar";
 
+import { CalendarRsvpControl } from "./calendar-rsvp-control";
 import {
   addDaysToDateKey,
   addMonthsToDateKey,
@@ -19,6 +20,8 @@ type CalendarViewMode = "month" | "week";
 
 type CalendarViewProps = {
   events: CalendarListEvent[];
+  isAuthenticated: boolean;
+  rsvpLoginHref: string;
   todayKey: string;
 };
 
@@ -212,7 +215,12 @@ function getDayButtonClassName({
   return `${baseClassName} border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50`;
 }
 
-export function CalendarView({ events, todayKey }: CalendarViewProps) {
+export function CalendarView({
+  events,
+  isAuthenticated,
+  rsvpLoginHref,
+  todayKey,
+}: CalendarViewProps) {
   const eventsByDateKey = useMemo(() => {
     const groups = new Map<string, CalendarListEvent[]>();
 
@@ -460,6 +468,12 @@ export function CalendarView({ events, todayKey }: CalendarViewProps) {
                         {event.note}
                       </p>
                     ) : null}
+                    <CalendarRsvpControl
+                      eventId={event.id}
+                      initialResponses={event.responses}
+                      isAuthenticated={isAuthenticated}
+                      loginHref={rsvpLoginHref}
+                    />
                   </div>
                 </div>
               </article>

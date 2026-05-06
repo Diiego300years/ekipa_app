@@ -4,12 +4,7 @@ import { getSupabasePublicConfig } from "./config";
 import { createServerSupabaseClient } from "./server";
 
 export { formatIdeaPrice, formatIdeaVoteCount } from "@/lib/idea-formatting";
-
-export const ideaLimits = {
-  title: 120,
-  description: 1000,
-  location: 160,
-} as const;
+export { ideaLimits } from "@/lib/idea-limits";
 
 export type IdeaListItem = {
   id: string;
@@ -19,6 +14,7 @@ export type IdeaListItem = {
   price: number | null;
   createdAt: string;
   authorName: string;
+  isOwnedByCurrentUser: boolean;
   voteCount: number;
   hasCurrentUserVote: boolean;
   comments: IdeaCommentListItem[];
@@ -42,6 +38,24 @@ export type IdeasListResult =
       ideas: [];
     };
 
+export type EditableIdea = {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  price: number | null;
+};
+
+export type EditableIdeaResult =
+  | {
+      status: "ready";
+      idea: EditableIdea;
+    }
+  | {
+      status: "unconfigured" | "auth-required" | "not-found" | "error";
+      idea: null;
+    };
+
 type IdeaRow = {
   id: string;
   title: string;
@@ -50,6 +64,14 @@ type IdeaRow = {
   price: number | string | null;
   created_by: string;
   created_at: string;
+};
+
+type EditableIdeaRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  price: number | string | null;
 };
 
 type ProfileRow = {
@@ -86,6 +108,8 @@ type IdeasListOptions = {
 };
 
 const fallbackAuthorName = "Użytkownik";
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 
 function normalizePrice(price: number | string | null) {
   if (price === null) {
@@ -275,6 +299,9 @@ export async function getIdeasForList(
       price: normalizePrice(idea.price),
       createdAt: idea.created_at,
       authorName: profilesById.get(idea.created_by) ?? fallbackAuthorName,
+      isOwnedByCurrentUser: Boolean(
+        currentUserId && currentUserId === idea.created_by,
+      ),
       voteCount: voteCountsByIdeaId.get(idea.id) ?? 0,
       hasCurrentUserVote: currentUserVotedIdeaIds.has(idea.id),
       comments: (commentsByIdeaId.get(idea.id) ?? []).map((comment) => ({
@@ -294,6 +321,97 @@ export async function getIdeasForList(
     return {
       status: "error",
       ideas: [],
+    };
+  }
+}
+
+export async function getEditableIdeaForOwner(
+  ideaId: string,
+  currentUserId?: string | null,
+): Promise<EditableIdeaResult> {
+  if (!uuidPattern.test(ideaId)) {
+    return {
+      status: "not-found",
+      idea: null,
+    };
+  }
+
+  if (!getSupabasePublicConfig()) {
+    return {
+      status: "unconfigured",
+      idea: null,
+    };
+  }
+
+  try {
+    const supabase = await createServerSupabaseClient();
+    let ownerUserId = currentUserId;
+
+    if (ownerUserId === undefined) {
+      const {
+        data: { user },
+        error: userError,
+      } = await measureServerTiming("supabase.ideas.getUserForEdit", () =>
+        supabase.auth.getUser(),
+      );
+
+      if (userError || !user) {
+        return {
+          status: "auth-required",
+          idea: null,
+        };
+      }
+
+      ownerUserId = user.id;
+    }
+
+    if (!ownerUserId) {
+      return {
+        status: "auth-required",
+        idea: null,
+      };
+    }
+
+    const { data, error } = await measureServerTiming(
+      "supabase.ideas.ideaForEdit",
+      () =>
+        supabase
+          .from("ideas")
+          .select("id,title,description,location,price")
+          .eq("id", ideaId)
+          .limit(1),
+    );
+
+    if (error) {
+      return {
+        status: "error",
+        idea: null,
+      };
+    }
+
+    const idea = ((data ?? []) as EditableIdeaRow[])[0];
+
+    if (!idea) {
+      return {
+        status: "not-found",
+        idea: null,
+      };
+    }
+
+    return {
+      status: "ready",
+      idea: {
+        id: idea.id,
+        title: idea.title,
+        description: idea.description,
+        location: idea.location,
+        price: normalizePrice(idea.price),
+      },
+    };
+  } catch {
+    return {
+      status: "error",
+      idea: null,
     };
   }
 }
