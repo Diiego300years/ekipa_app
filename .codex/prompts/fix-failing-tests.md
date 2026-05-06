@@ -1,19 +1,23 @@
 # Fix Failing Tests
 
-Find and fix failing tests.
-
-Read:
-
-- `AGENTS.md`
-- `PROJECT_CONTEXT.md`
+Read `AGENTS.md` and `PROJECT_CONTEXT.md`, then find the real failure.
 
 Rules:
 
 - Do not delete tests just to make the suite pass.
 - Understand the intended behavior first.
 - Fix the implementation, or update the test only if the test is outdated.
-- Keep test names, descriptions, and technical comments in English.
-- Keep visible UI text expectations in Polish.
+- Keep test names and technical text English.
+- Keep visible UI expectations Polish.
 - Do not translate the application UI to English to satisfy a test.
-- Run the relevant test after fixing.
-- Then run the full E2E suite when Playwright is configured.
+- Use stable selectors and Playwright expectations instead of random waits.
+- Run the smallest relevant test first, then broader checks if needed.
+
+Useful commands:
+
+```bash
+npm run test:e2e
+npm run test:perf
+```
+
+For performance diagnostics, `PLAYWRIGHT_BASE_URL` can target an existing app and `PERF_DEBUG=true` enables server-side Supabase timing logs.

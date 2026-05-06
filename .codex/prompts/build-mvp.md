@@ -1,38 +1,16 @@
-# Build The MVP
+# Build From Current App
 
-Build the MVP for this project.
+Use this prompt for future product work.
 
-Read:
+Read `AGENTS.md`, `PROJECT_CONTEXT.md`, and the relevant skill before editing.
 
-- `AGENTS.md`
-- `PROJECT_CONTEXT.md`
+Rules:
 
-Follow the language rules:
+- Start from the implemented app; do not recreate old MVP foundations.
+- Keep the change small and mobile-first.
+- Keep visible UI Polish and technical text English.
+- Use server-side Supabase session/cookies for user identity.
+- Do not add service-role access unless explicitly planned and server-only.
+- Add or update focused Playwright coverage for user-facing behavior.
 
-- write repository instructions, technical docs, tests, identifiers, and comments in English
-- keep all visible application UI copy in Polish
-
-Implement in small steps:
-
-1. project structure
-2. mobile-first layout
-3. mobile bottom navigation
-4. Supabase client setup
-5. login/register screen
-6. Supabase Auth integration
-7. ideas CRUD
-8. voting with one vote per user per idea
-9. idea ranking
-10. calendar scheduling
-11. Playwright E2E tests
-12. PWA support
-13. push notifications
-
-Build the core MVP before advanced PWA or push-notification features unless the current task explicitly asks for them.
-
-After each major feature:
-
-- run TypeScript checks
-- run lint
-- run the relevant Playwright tests when E2E coverage exists
-- run the production build before finalizing
+Before finalizing, run the checks relevant to the changed surface.

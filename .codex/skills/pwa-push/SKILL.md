@@ -4,15 +4,13 @@ Use this skill when working on PWA, service worker, push notifications, or notif
 
 ## Goals
 
-The app should support:
+Planned areas:
 
 - installable PWA
-- notifications for new ideas
-- notifications for new votes
-- notifications for scheduled dates
+- push notifications for new ideas
 - in-app unread indicators
 
-Advanced PWA and push-notification work should usually come after the core MVP unless the current task explicitly requests it.
+These are roadmap items, not current implemented behavior.
 
 ## Rules
 
@@ -21,4 +19,4 @@ Advanced PWA and push-notification work should usually come after the core MVP u
 - Icon badge support is platform-dependent.
 - Do not rely only on the app icon badge.
 - Always provide in-app notification indicators.
-- Treat Android icon badge support as an optional enhancement.
+- Keep service worker and subscription code scoped to explicit PWA/push tasks.

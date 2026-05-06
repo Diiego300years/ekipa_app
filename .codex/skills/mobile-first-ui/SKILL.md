@@ -4,39 +4,33 @@ Use this skill when creating or changing UI.
 
 ## Rules
 
-- Design for mobile first.
-- Use Tailwind responsive classes.
+- Design mobile-first; mobile is the primary surface.
+- Use existing App Router, React, and Tailwind patterns.
 - Avoid dense desktop layouts on mobile.
-- Use bottom navigation on mobile.
 - Keep visible application UI copy in Polish.
-- Keep technical names, comments, tests, and docs in English.
-- Buttons must be large enough for touch.
-- Avoid drag and drop as the only mobile interaction.
-- Calendar scheduling on mobile should use a clear date/time form.
+- Keep technical names, tests, comments, and docs in English.
+- Size buttons, forms, and navigation for touch.
+- Preserve loading and pending states for server actions and routes.
 
 ## Navigation
 
-The mobile bottom navigation should cover:
-
-- ideas
-- voting
-- calendar
-- add
-
-Use Polish visible labels, preferably:
+Use the existing mobile bottom navigation labels:
 
 - `Pomysły`
 - `Głosowanie`
 - `Kalendarz`
 - `Dodaj`
 
+## Calendar
+
+- Keep the mobile month/week calendar usable on small screens.
+- Do not rely on drag and drop for mobile scheduling.
+- Use tap/click plus date/time inputs for scheduling flows.
+
 ## Checks
 
 Before finishing UI work:
 
 - inspect small viewport layout
-- check navigation
-- check forms
-- check voting UI
-- check calendar UI
+- check navigation, forms, voting, comments, and calendar views when touched
 - verify visible UI copy is Polish

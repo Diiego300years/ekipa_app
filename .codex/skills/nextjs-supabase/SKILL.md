@@ -4,24 +4,29 @@ Use this skill when working with authentication, database queries, server action
 
 ## Rules
 
-- Use TypeScript.
+- Use TypeScript and existing App Router patterns.
 - Keep database access secure.
-- Do not expose the service role key to the browser.
-- Use `NEXT_PUBLIC_` only for public Supabase keys.
-- Use Supabase RLS policies where needed.
-- Validate user identity before mutations.
-- Enforce one vote per user per idea at the database level where possible.
+- Use server-side Supabase session/cookies as the source of user identity.
+- Never trust client-submitted user IDs for ownership or mutation identity.
+- Do not expose secret keys to the browser.
+- Do not add a service-role client unless explicitly planned, server-only, and justified.
+- Use Supabase RLS policies and database constraints as the security backstop.
+- Enforce one vote per user per idea at the database level.
 - Link calendar events to ideas.
+- Supabase migrations may need to be run manually in the Supabase SQL Editor.
 
 ## Environment Variables
 
-Expected variables:
+Current variables:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
+
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` is a legacy fallback. `SUPABASE_SERVICE_ROLE_KEY` must stay server-only and is not used by default.
 
 ## Data Rules
 

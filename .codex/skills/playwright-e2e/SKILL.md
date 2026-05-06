@@ -14,19 +14,22 @@ Ensure the application actually works from the user's perspective.
 - Do not rely on random timing.
 - Use `await expect(...)` instead of manual sleeps.
 - Test mobile viewport for mobile-specific UX.
-- Keep test names and descriptions in English.
+- Keep test names and technical text in English.
 - Assert visible UI text in Polish.
+- Keep `.env.local` and real credentials out of commits.
 
 ## Required Checks
 
-Run the configured script when it exists:
+E2E:
 
 ```bash
 npm run test:e2e
 ```
 
-Until that script exists, run Playwright directly after Playwright is configured:
+Performance diagnostics:
 
 ```bash
-npx playwright test
+npm run test:perf
 ```
+
+Use `PLAYWRIGHT_BASE_URL` to target an existing app. Use `PERF_DEBUG=true` when server-side Supabase timing logs are needed.

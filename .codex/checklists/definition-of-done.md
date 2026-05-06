@@ -1,65 +1,42 @@
 # Definition Of Done
 
-Before considering a task complete, verify the relevant items below.
+Use the relevant checks for the task.
 
-## Documentation-Only Tasks
+## Documentation
 
-- Codex-facing instructions are written in English.
-- Literal examples of visible UI copy remain Polish.
-- Documentation agrees with `AGENTS.md` and `PROJECT_CONTEXT.md`.
-- No app behavior or product feature implementation changed.
+- Codex-facing docs are concise, practical, and English.
+- Literal visible UI examples remain Polish.
+- Docs agree with `AGENTS.md` and `PROJECT_CONTEXT.md`.
+- No app code, tests, schema, or behavior changed.
 
-## Code Tasks
+## Code
 
-- The implementation matches `PROJECT_CONTEXT.md`.
-- The code is simple and readable.
-- There is no unnecessary abstraction.
-- There is no dead code.
-- No secrets are committed to the repository.
-- Visible application UI text is Polish.
+- Implementation matches `PROJECT_CONTEXT.md`.
+- Code is simple, typed, and scoped to the task.
+- Visible app UI is Polish.
+- `.env.local` and secrets are not committed.
+- Supabase mutations use server-side session/cookie identity, not client user IDs.
+- No service-role client is added unless explicitly planned and server-only.
+- Required migrations are documented; they may need manual Supabase SQL Editor execution.
 
-## TypeScript
-
-Run the configured script when it exists:
-
-```bash
-npm run typecheck
-```
-
-Until that script exists, run:
-
-```bash
-npx tsc --noEmit
-```
-
-## Lint
-
-Run:
+## Checks
 
 ```bash
 npm run lint
-```
-
-## Build
-
-Run:
-
-```bash
+npm run typecheck
 npm run build
 ```
 
-## E2E Tests
-
-When Playwright is configured and the task affects user-facing behavior, run the relevant E2E tests.
-
-Use the configured script when it exists:
+Run Playwright when user-facing behavior changes:
 
 ```bash
 npm run test:e2e
 ```
 
-Until that script exists, run:
+Run performance diagnostics when performance is relevant:
 
 ```bash
-npx playwright test
+npm run test:perf
 ```
+
+Use `PLAYWRIGHT_BASE_URL` to target an existing app and `PERF_DEBUG=true` for server-side Supabase timing logs.
