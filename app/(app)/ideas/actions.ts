@@ -1,7 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
 import { measureServerTiming } from "@/lib/performance/server-timing";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -216,8 +214,6 @@ export async function voteForIdeaAction(
       );
     }
 
-    revalidatePath("/voting");
-
     return voteActionSuccess(confirmedState, "Głos został oddany.");
   } catch {
     return voteActionError(
@@ -304,8 +300,6 @@ export async function removeVoteForIdeaAction(
         ideaId,
       );
     }
-
-    revalidatePath("/voting");
 
     return voteActionSuccess(confirmedState, "Głos został cofnięty.");
   } catch {

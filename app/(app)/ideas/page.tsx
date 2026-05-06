@@ -34,7 +34,10 @@ function getKnownUserDisplayName(
 export default async function IdeasPage({ searchParams }: IdeasPageProps) {
   const resolvedSearchParams = await searchParams;
   const user = await getCurrentSupabaseUser();
-  const ideasResult = await getIdeasForList({ includeComments: true });
+  const ideasResult = await getIdeasForList({
+    currentUserId: user?.id ?? null,
+    includeComments: true,
+  });
   const currentUserDisplayName = getKnownUserDisplayName(user);
   const voteLoginHref = appendAuthRedirectMessage(
     "/login",

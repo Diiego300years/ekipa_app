@@ -110,23 +110,29 @@ test.describe("real Supabase action performance diagnostics", () => {
       });
 
       await measureAndLog("action undo vote", "action", async () => {
-        await page
+        const votedIdeaCard = page
           .getByTestId("idea-card")
           .filter({ hasText: title })
-          .first()
+          .first();
+
+        await votedIdeaCard
           .getByRole("button", { name: "Cofnij głos" })
           .click();
 
-        await expect(page.getByText("Głos został cofnięty.")).toBeVisible({
+        await expect(
+          votedIdeaCard.getByRole("button", { name: "Głosuj" }),
+        ).toBeVisible({ timeout: 15_000 });
+        await expect(votedIdeaCard.getByTestId("idea-vote-count")).toHaveText(
+          "0 głosów",
+          {
+            timeout: 15_000,
+          },
+        );
+        await expect(
+          votedIdeaCard.getByRole("button", { name: "Cofnij głos" }),
+        ).toHaveCount(0, {
           timeout: 15_000,
         });
-        await expect(
-          page
-            .getByTestId("idea-card")
-            .filter({ hasText: title })
-            .first()
-            .getByRole("button", { name: "Głosuj" }),
-        ).toBeVisible({ timeout: 15_000 });
       });
 
       const commentIdeaCard = page

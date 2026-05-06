@@ -72,6 +72,16 @@ type IdeaCommentRow = {
 
 type IdeasListOptions = {
   includeComments?: boolean;
+  includeCurrentUserVoteState?: boolean;
+  /**
+   * Trusted server-derived Supabase user id for current-user vote state.
+   * Pass only ids from server-side Supabase session/cookie state, such as
+   * getCurrentSupabaseUser(). Never pass values from client props, form input,
+   * URL params, search params, or any other user-controlled source. RLS remains
+   * the security boundary, but application identity logic must stay
+   * server-derived.
+   */
+  currentUserId?: string | null;
   sort?: "newest" | "ranking";
 };
 
@@ -118,11 +128,20 @@ export async function getIdeasForList(
 
   try {
     const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await measureServerTiming("supabase.ideas.getUser", () =>
-      supabase.auth.getUser(),
-    );
+    const includeCurrentUserVoteState =
+      options.includeCurrentUserVoteState ?? true;
+    let currentUserId = options.currentUserId;
+
+    if (includeCurrentUserVoteState && currentUserId === undefined) {
+      const {
+        data: { user },
+      } = await measureServerTiming("supabase.ideas.getUser", () =>
+        supabase.auth.getUser(),
+      );
+
+      currentUserId = user?.id ?? null;
+    }
+
     const { data, error } = await measureServerTiming(
       "supabase.ideas.list",
       () =>
@@ -223,14 +242,14 @@ export async function getIdeasForList(
         );
       }
 
-      if (user) {
+      if (includeCurrentUserVoteState && currentUserId) {
         const { data: currentUserVoteData, error: currentUserVoteError } =
           await measureServerTiming("supabase.ideas.currentUserVotes", () =>
             supabase
               .from("votes")
               .select("idea_id")
               .in("idea_id", ideaIds)
-              .eq("user_id", user.id),
+              .eq("user_id", currentUserId),
           );
 
         if (currentUserVoteError) {
