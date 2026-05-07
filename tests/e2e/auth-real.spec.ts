@@ -90,13 +90,43 @@ async function logInAsAuthUser(page: Page) {
 async function mockPushApis(
   page: Page,
   options: {
+    endpoint?: string;
     permission: "default" | "denied" | "granted";
     subscriptionMode?: "none" | "invalid" | "invalid-endpoint";
   },
 ) {
   await page.addInitScript((mockOptions) => {
+    const unsubscribeStorageKey = "ekipa-push-unsubscribe-count";
+
+    if (!window.localStorage.getItem(unsubscribeStorageKey)) {
+      window.localStorage.setItem(unsubscribeStorageKey, "0");
+    }
+
+    function recordUnsubscribe() {
+      const currentCount = Number(
+        window.localStorage.getItem(unsubscribeStorageKey) ?? "0",
+      );
+
+      window.localStorage.setItem(
+        unsubscribeStorageKey,
+        String(currentCount + 1),
+      );
+    }
+
     let currentPermission = mockOptions.permission;
     const notification = function MockNotification() {};
+    type MockSubscription = {
+      endpoint: string;
+      toJSON: () => {
+        endpoint: string;
+        keys: {
+          auth?: string;
+          p256dh?: string;
+        };
+      };
+      unsubscribe: () => Promise<boolean>;
+    };
+    let activeSubscription: MockSubscription | null = null;
 
     Object.defineProperty(notification, "permission", {
       configurable: true,
@@ -112,7 +142,29 @@ async function mockPushApis(
       },
     });
 
-    const createSubscription = () => {
+    const createValidSubscription = () => {
+      const endpoint =
+        mockOptions.endpoint ?? "https://push.example.test/e2e-default";
+
+      return {
+        endpoint,
+        toJSON: () => ({
+          endpoint,
+          keys: {
+            auth: "test-auth",
+            p256dh: "test-p256dh",
+          },
+        }),
+        unsubscribe: async () => {
+          recordUnsubscribe();
+          activeSubscription = null;
+
+          return true;
+        },
+      };
+    };
+
+    const createInitialSubscription = () => {
       if (mockOptions.subscriptionMode === "invalid") {
         return {
           endpoint: "",
@@ -120,7 +172,12 @@ async function mockPushApis(
             endpoint: "",
             keys: {},
           }),
-          unsubscribe: async () => true,
+          unsubscribe: async () => {
+            recordUnsubscribe();
+            activeSubscription = null;
+
+            return true;
+          },
         };
       }
 
@@ -134,16 +191,26 @@ async function mockPushApis(
               p256dh: "test-p256dh",
             },
           }),
-          unsubscribe: async () => true,
+          unsubscribe: async () => {
+            recordUnsubscribe();
+            activeSubscription = null;
+
+            return true;
+          },
         };
       }
 
       return null;
     };
+    activeSubscription = createInitialSubscription();
     const registration = {
       pushManager: {
-        getSubscription: async () => createSubscription(),
-        subscribe: async () => createSubscription(),
+        getSubscription: async () => activeSubscription,
+        subscribe: async () => {
+          activeSubscription = createValidSubscription();
+
+          return activeSubscription;
+        },
       },
     };
 
@@ -316,6 +383,77 @@ async function hasCalendarEventResponsesTableThroughRls() {
   throw new Error(
     `Could not read RSVP responses through RLS: ${error.message}`,
   );
+}
+
+async function hasPushSubscriptionsTableThroughRls() {
+  if (!supabasePublicConfig) {
+    return false;
+  }
+
+  const { client } = await createAuthenticatedPublicClient();
+
+  try {
+    const { error } = await client
+      .from("push_subscriptions")
+      .select("endpoint")
+      .limit(1);
+
+    if (!error) {
+      return true;
+    }
+
+    if (error.code === "42P01" || error.code === "PGRST205") {
+      return false;
+    }
+
+    throw new Error(
+      `Could not read push subscriptions through RLS: ${error.message}`,
+    );
+  } finally {
+    await client.auth.signOut({ scope: "local" });
+  }
+}
+
+async function getOwnPushSubscriptionCountThroughRls(endpoint: string) {
+  const { client, user } = await createAuthenticatedPublicClient();
+
+  try {
+    const { data, error } = await client
+      .from("push_subscriptions")
+      .select("endpoint,user_id")
+      .eq("endpoint", endpoint)
+      .eq("user_id", user.id);
+
+    if (error) {
+      throw new Error(
+        `Could not read generated push subscription through RLS: ${error.message}`,
+      );
+    }
+
+    return (data ?? []).length;
+  } finally {
+    await client.auth.signOut({ scope: "local" });
+  }
+}
+
+async function deleteOwnPushSubscriptionThroughRls(endpoint: string) {
+  const { client, user } = await createAuthenticatedPublicClient();
+
+  try {
+    const { error } = await client
+      .from("push_subscriptions")
+      .delete()
+      .eq("endpoint", endpoint)
+      .eq("user_id", user.id);
+
+    if (error) {
+      throw new Error(
+        `Cleanup failed through push subscription RLS/delete policy: ${error.message}`,
+      );
+    }
+  } finally {
+    await client.auth.signOut({ scope: "local" });
+  }
 }
 
 async function canUpdateGeneratedIdeaThroughRls(title: string) {
@@ -529,6 +667,68 @@ test.describe("real Supabase login", () => {
     ).toBeVisible();
   });
 
+  test("logout keeps the browser push subscription and database row", async ({
+    page,
+  }) => {
+    test.skip(
+      !vapidPublicKey,
+      "Set NEXT_PUBLIC_VAPID_PUBLIC_KEY to test browser push subscription state.",
+    );
+    test.skip(
+      !(await hasPushSubscriptionsTableThroughRls()),
+      "Apply the push subscriptions migration to run push persistence E2E tests.",
+    );
+
+    const endpoint = `https://push.example.test/e2e-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    let shouldCleanup = false;
+
+    try {
+      await mockPushApis(page, {
+        endpoint,
+        permission: "default",
+        subscriptionMode: "none",
+      });
+      shouldCleanup = true;
+
+      await logInAsAuthUser(page);
+
+      const notificationSettings = page.getByTestId("notification-settings");
+
+      await notificationSettings
+        .getByRole("button", { name: "Włącz powiadomienia" })
+        .click();
+
+      await expect(
+        notificationSettings.getByText(
+          "Powiadomienia są włączone na tym urządzeniu.",
+        ),
+      ).toBeVisible({ timeout: 15_000 });
+      expect(await getOwnPushSubscriptionCountThroughRls(endpoint)).toBe(1);
+
+      await page.getByRole("button", { name: "Wyloguj" }).click();
+
+      await expect(page).toHaveURL(/\/login$/, { timeout: 15_000 });
+      await expect(
+        page.getByRole("heading", { name: "Zaloguj się" }),
+      ).toBeVisible();
+
+      const unsubscribeCount = await page.evaluate(() =>
+        Number(
+          window.localStorage.getItem("ekipa-push-unsubscribe-count") ?? "0",
+        ),
+      );
+
+      expect(unsubscribeCount).toBe(0);
+      expect(await getOwnPushSubscriptionCountThroughRls(endpoint)).toBe(1);
+    } finally {
+      if (shouldCleanup) {
+        await deleteOwnPushSubscriptionThroughRls(endpoint);
+      }
+    }
+  });
+
   test("authenticated user sees missing public push key guidance", async ({
     page,
   }) => {
@@ -652,7 +852,7 @@ test.describe("real Supabase login", () => {
     ).toBeVisible();
   });
 
-  test("authenticated user can retry database removal after browser unsubscribe", async ({
+  test("authenticated user does not unsubscribe when database removal fails", async ({
     page,
   }) => {
     test.skip(
@@ -679,12 +879,19 @@ test.describe("real Supabase login", () => {
 
     await expect(
       notificationSettings.getByText(
-        "Powiadomienia wyłączono w przeglądarce, ale nie udało się usunąć zapisu z bazy.",
+        "Nie udało się usunąć zapisu powiadomień. Spróbuj ponownie.",
       ),
     ).toBeVisible();
     await expect(
       notificationSettings.getByRole("button", { name: "Spróbuj ponownie" }),
     ).toBeVisible();
+    expect(
+      await page.evaluate(() =>
+        Number(
+          window.localStorage.getItem("ekipa-push-unsubscribe-count") ?? "0",
+        ),
+      ),
+    ).toBe(0);
   });
 });
 

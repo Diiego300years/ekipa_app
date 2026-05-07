@@ -81,20 +81,25 @@ test.describe("static shell", () => {
     await expect(notificationSettings).toBeVisible();
     await expect(
       notificationSettings.getByText(
-        "Powiadomienia dotyczą tej przeglądarki lub urządzenia.",
+        "Powiadomienia dotyczą tej przeglądarki lub urządzenia i mogą działać także po wylogowaniu, dopóki ich nie wyłączysz.",
       ),
     ).toBeVisible();
     await expect(
       notificationSettings.getByText(
-        "Zaloguj się, żeby włączyć powiadomienia na tym urządzeniu.",
+        "Zaloguj się, żeby zarządzać powiadomieniami na tym urządzeniu.",
       ),
     ).toBeVisible();
     await expect(
       notificationSettings.getByRole("link", { name: "Przejdź do logowania" }),
-    ).toHaveAttribute("href", /\/login/);
+    ).toHaveAttribute("href", "/login");
     await expect(
       notificationSettings.getByRole("button", {
         name: "Włącz powiadomienia",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      notificationSettings.getByRole("button", {
+        name: "Wyłącz powiadomienia",
       }),
     ).toHaveCount(0);
   });

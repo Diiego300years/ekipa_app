@@ -52,12 +52,6 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
     "error",
     "Zaloguj się, żeby dodać komentarz.",
   );
-  const pushLoginHref = appendAuthRedirectMessage(
-    "/login",
-    "error",
-    "Zaloguj się, żeby włączyć powiadomienia.",
-  );
-
   return (
     <section className="space-y-5">
       <AuthStatusMessage
@@ -75,7 +69,6 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
 
       <NotificationSettings
         isAuthenticated={Boolean(user)}
-        loginHref={pushLoginHref}
         vapidPublicKey={getVapidPublicKey()}
       />
 

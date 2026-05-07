@@ -11,7 +11,6 @@ import {
 
 type NotificationSettingsProps = {
   isAuthenticated: boolean;
-  loginHref: string;
   vapidPublicKey: string | null;
 };
 
@@ -28,6 +27,7 @@ type NotificationStatus =
   | "save-error"
   | "saved"
   | "saving"
+  | "auth-required"
   | "unsupported";
 
 type NotificationState = {
@@ -45,7 +45,11 @@ type SerializablePushSubscription = {
   };
 };
 
-const deviceCopy = "Powiadomienia dotyczą tej przeglądarki lub urządzenia.";
+const deviceCopy =
+  "Powiadomienia dotyczą tej przeglądarki lub urządzenia i mogą działać także po wylogowaniu, dopóki ich nie wyłączysz.";
+const loginManagementCopy =
+  "Zaloguj się, żeby zarządzać powiadomieniami na tym urządzeniu.";
+const loginHref = "/login";
 
 function hasPushSupport() {
   return (
@@ -139,6 +143,10 @@ function getStatusClassName(status: NotificationStatus) {
     return "border-red-200 bg-red-50 text-red-800";
   }
 
+  if (status === "auth-required") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+
   if (status === "removed" || status === "saved") {
     return "border-teal-200 bg-teal-50 text-teal-900";
   }
@@ -148,13 +156,12 @@ function getStatusClassName(status: NotificationStatus) {
 
 function mapActionFailure(result: PushSubscriptionActionResult) {
   return result.status === "auth-required"
-    ? "Zaloguj się ponownie, żeby zarządzać powiadomieniami."
+    ? loginManagementCopy
     : result.message;
 }
 
 export function NotificationSettings({
   isAuthenticated,
-  loginHref,
   vapidPublicKey,
 }: NotificationSettingsProps) {
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
@@ -274,7 +281,8 @@ export function NotificationSettings({
 
       if (result.status !== "success") {
         setState({
-          status: "save-error",
+          status:
+            result.status === "auth-required" ? "auth-required" : "save-error",
           message: mapActionFailure(result),
           subscription,
         });
@@ -295,23 +303,59 @@ export function NotificationSettings({
     }
   }
 
-  async function removeSubscriptionFromDatabase(endpoint: string) {
+  async function removeSubscriptionFromDatabase(
+    endpoint: string,
+    subscription: PushSubscription,
+  ) {
     const result = await removePushSubscriptionAction({ endpoint });
 
     if (result.status !== "success") {
+      if (result.status === "auth-required") {
+        setState({
+          status: "auth-required",
+          message: loginManagementCopy,
+          subscription,
+        });
+        return false;
+      }
+
       setState({
         status: "remove-error",
-        message:
-          "Powiadomienia wyłączono w przeglądarce, ale nie udało się usunąć zapisu z bazy. Spróbuj ponownie.",
+        message: "Nie udało się usunąć zapisu powiadomień. Spróbuj ponownie.",
         retryRemoveEndpoint: endpoint,
-        subscription: null,
+        subscription,
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  async function disableSubscription(subscription: PushSubscription) {
+    const endpoint = subscription.endpoint;
+    const didRemove = await removeSubscriptionFromDatabase(
+      endpoint,
+      subscription,
+    );
+
+    if (!didRemove) {
+      return;
+    }
+
+    const didUnsubscribe = await subscription.unsubscribe();
+
+    if (!didUnsubscribe) {
+      setState({
+        status: "remove-error",
+        message: "Nie udało się wyłączyć powiadomień. Spróbuj ponownie.",
+        subscription,
       });
       return;
     }
 
     setState({
       status: "removed",
-      message: result.message,
+      message: "Powiadomienia zostały wyłączone na tym urządzeniu.",
       subscription: null,
     });
   }
@@ -337,19 +381,7 @@ export function NotificationSettings({
         return;
       }
 
-      const endpoint = subscription.endpoint;
-      const didUnsubscribe = await subscription.unsubscribe();
-
-      if (!didUnsubscribe) {
-        setState({
-          status: "remove-error",
-          message: "Nie udało się wyłączyć powiadomień. Spróbuj ponownie.",
-          subscription,
-        });
-        return;
-      }
-
-      await removeSubscriptionFromDatabase(endpoint);
+      await disableSubscription(subscription);
     } catch {
       setState((currentState) => ({
         ...currentState,
@@ -360,7 +392,7 @@ export function NotificationSettings({
   }
 
   async function handleRemoveRetry() {
-    if (!state.retryRemoveEndpoint) {
+    if (!state.retryRemoveEndpoint || !state.subscription) {
       await handleDisable();
       return;
     }
@@ -370,7 +402,7 @@ export function NotificationSettings({
       status: "removing",
       message: "Usuwanie zapisu powiadomień...",
     }));
-    await removeSubscriptionFromDatabase(state.retryRemoveEndpoint);
+    await disableSubscription(state.subscription);
   }
 
   if (!isAuthenticated) {
@@ -385,7 +417,7 @@ export function NotificationSettings({
           </h2>
           <p className="text-sm leading-6 text-slate-600">{deviceCopy}</p>
           <p className="text-sm leading-6 text-slate-600">
-            Zaloguj się, żeby włączyć powiadomienia na tym urządzeniu.
+            {loginManagementCopy}
           </p>
         </div>
         <Link
@@ -406,6 +438,7 @@ export function NotificationSettings({
   const canDisable = state.status === "saved";
   const canRetryRemove = state.status === "remove-error";
   const isBusy = state.status === "saving" || state.status === "removing";
+  const shouldShowLoginLink = state.status === "auth-required";
 
   return (
     <section
@@ -461,6 +494,15 @@ export function NotificationSettings({
           >
             Spróbuj ponownie
           </button>
+        ) : null}
+
+        {shouldShowLoginLink ? (
+          <Link
+            className="inline-flex min-h-11 items-center rounded-md bg-teal-700 px-4 text-sm font-semibold text-white transition hover:bg-teal-800"
+            href={loginHref}
+          >
+            Przejdź do logowania
+          </Link>
         ) : null}
       </div>
     </section>
