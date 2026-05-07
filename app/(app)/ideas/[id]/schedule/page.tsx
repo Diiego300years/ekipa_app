@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
 import { getIdeaForScheduling } from "@/lib/supabase/calendar";
+import { getCurrentSupabaseUser } from "@/lib/supabase/session";
 
 import { ScheduleIdeaForm } from "./schedule-form";
 
@@ -9,13 +10,22 @@ type ScheduleIdeaPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+function firstSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default async function ScheduleIdeaPage({
   params,
+  searchParams,
 }: ScheduleIdeaPageProps) {
   const { id } = await params;
-  const ideaResult = await getIdeaForScheduling(id);
+  const resolvedSearchParams = await searchParams;
+  const user = await getCurrentSupabaseUser();
+  const ideaResult = await getIdeaForScheduling(id, user?.id ?? null);
+  const isFromCreated = firstSearchParam(resolvedSearchParams.from) === "created";
   const loginHref = appendAuthRedirectMessage(
     "/login",
     "error",
@@ -48,14 +58,38 @@ export default async function ScheduleIdeaPage({
         </p>
       ) : null}
 
+      {ideaResult.status === "auth-required" ? (
+        <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium leading-6 text-amber-900">
+            Zaloguj się, żeby zaplanować ten pomysł.
+          </p>
+          <Link
+            className="inline-flex text-sm font-semibold text-teal-700"
+            href={loginHref}
+          >
+            Przejdź do logowania
+          </Link>
+        </div>
+      ) : null}
+
       {ideaResult.status === "not-found" || ideaResult.status === "error" ? (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-slate-700 shadow-sm">
           Nie znaleziono pomysłu do zaplanowania.
         </p>
       ) : null}
 
+      {ideaResult.status === "no-access" ? (
+        <p className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-slate-700 shadow-sm">
+          Nie masz dostępu do planowania tego pomysłu.
+        </p>
+      ) : null}
+
       {ideaResult.status === "ready" ? (
-        <ScheduleIdeaForm idea={ideaResult.idea} loginHref={loginHref} />
+        <ScheduleIdeaForm
+          idea={ideaResult.idea}
+          loginHref={loginHref}
+          showCreatedMessage={isFromCreated}
+        />
       ) : null}
     </section>
   );

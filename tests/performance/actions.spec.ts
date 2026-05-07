@@ -90,11 +90,17 @@ test.describe("real Supabase action performance diagnostics", () => {
         await timings.measure("action add idea", async () => {
           await page.getByRole("button", { name: "Dodaj pomysł" }).click();
 
-          await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
           await expect(page.getByText("Pomysł został dodany.")).toBeVisible({
             timeout: 15_000,
           });
           shouldCleanupIdea = true;
+          await expect(page).toHaveURL(
+            /\/ideas\/[0-9a-f-]+\/schedule\?from=created/,
+            { timeout: 15_000 },
+          );
+          await page.getByRole("button", { name: "Nie teraz" }).click();
+
+          await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
           await expect(
             page.getByTestId("idea-card").filter({ hasText: title }).first(),
           ).toBeVisible({ timeout: 15_000 });

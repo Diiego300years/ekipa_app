@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const preferredRegion = "lhr1";
@@ -6,6 +6,10 @@ export const preferredRegion = "lhr1";
 export const metadata: Metadata = {
   title: "Ekipa",
   description: "Mobilny kalendarz pomysłów dla ekipy.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f766e",
 };
 
 export default function RootLayout({

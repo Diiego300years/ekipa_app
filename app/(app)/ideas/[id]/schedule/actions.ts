@@ -33,6 +33,11 @@ type TimeParts = {
   minute: number;
 };
 
+type SchedulingIdeaOwnerRow = {
+  id: string;
+  created_by: string;
+};
+
 function readFormText(formData: FormData, field: string) {
   const value = formData.get(field);
 
@@ -253,6 +258,32 @@ export async function scheduleIdeaAction(
 
     if (userError || !user) {
       return scheduleAuthRequired();
+    }
+
+    const { data: idea, error: ideaError } = await measureServerTiming(
+      "supabase.calendar.ideaOwnerForCreate",
+      () =>
+        supabase
+          .from("ideas")
+          .select("id,created_by")
+          .eq("id", ideaId)
+          .maybeSingle<SchedulingIdeaOwnerRow>(),
+    );
+
+    if (ideaError) {
+      return scheduleFormError(
+        "Nie udało się sprawdzić dostępu do pomysłu. Spróbuj ponownie.",
+      );
+    }
+
+    if (!idea) {
+      return scheduleFormError("Nie znaleziono pomysłu do zaplanowania.");
+    }
+
+    if (idea.created_by !== user.id) {
+      return scheduleFormError(
+        "Nie masz dostępu do planowania tego pomysłu.",
+      );
     }
 
     const { error } = await measureServerTiming(

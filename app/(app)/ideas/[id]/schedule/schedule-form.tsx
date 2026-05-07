@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState } from "react";
 
 import { SubmitButton } from "@/app/submit-button";
@@ -15,6 +16,7 @@ import {
 type ScheduleIdeaFormProps = {
   idea: SchedulingIdea;
   loginHref: string;
+  showCreatedMessage?: boolean;
 };
 
 function formatScheduleIdeaPrice(price: number | null) {
@@ -28,7 +30,12 @@ function formatScheduleIdeaPrice(price: number | null) {
   })} zł`;
 }
 
-export function ScheduleIdeaForm({ idea, loginHref }: ScheduleIdeaFormProps) {
+export function ScheduleIdeaForm({
+  idea,
+  loginHref,
+  showCreatedMessage = false,
+}: ScheduleIdeaFormProps) {
+  const router = useRouter();
   const [state, formAction] = useActionState(
     scheduleIdeaAction,
     emptyScheduleIdeaActionState,
@@ -50,6 +57,21 @@ export function ScheduleIdeaForm({ idea, loginHref }: ScheduleIdeaFormProps) {
           </p>
         </div>
       </article>
+
+      {showCreatedMessage ? (
+        <div className="space-y-3 rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
+          <p className="text-sm font-medium leading-6 text-teal-900">
+            Pomysł został dodany. Możesz teraz zaplanować termin.
+          </p>
+          <button
+            className="inline-flex min-h-11 items-center rounded-md border border-teal-700 px-4 text-sm font-semibold text-teal-700 transition hover:bg-white"
+            onClick={() => router.replace("/ideas")}
+            type="button"
+          >
+            Nie teraz
+          </button>
+        </div>
+      ) : null}
 
       <form
         action={formAction}

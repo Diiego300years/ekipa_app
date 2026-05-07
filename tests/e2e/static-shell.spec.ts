@@ -76,6 +76,7 @@ test.describe("static shell", () => {
 
     await expect(page.getByRole("link", { name: "Edytuj" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Usuń" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Zaplanuj" })).toHaveCount(0);
   });
 
   test("uses the bottom navigation between shell routes", async ({ page }) => {
@@ -386,6 +387,31 @@ test.describe("static shell", () => {
     await expect(
       page.getByText("Nie znaleziono pomysłu do zaplanowania."),
     ).toBeVisible();
+    await expect(page.getByTestId("schedule-idea-form")).toHaveCount(0);
+  });
+
+  test("does not render the schedule form for a missing idea id", async ({
+    page,
+  }) => {
+    await page.goto("/ideas/00000000-0000-4000-8000-000000000000/schedule");
+
+    const isUnconfigured = await page
+      .getByText("Planowanie będzie dostępne po skonfigurowaniu Supabase.")
+      .isVisible()
+      .catch(() => false);
+
+    test.skip(
+      isUnconfigured,
+      "Missing idea schedule route needs Supabase configured.",
+    );
+
+    await expect(
+      page.getByRole("heading", { name: "Zaplanuj pomysł" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Nie znaleziono pomysłu do zaplanowania."),
+    ).toBeVisible();
+    await expect(page.getByTestId("schedule-idea-form")).toHaveCount(0);
   });
 
   test("renders the add idea form", async ({ page }) => {

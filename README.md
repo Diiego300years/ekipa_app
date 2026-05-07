@@ -52,6 +52,15 @@ PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 npm run test:perf
 When `PLAYWRIGHT_BASE_URL` is provided, performance tests target that existing
 server and do not start the local development server fallback.
 
+## PWA Readiness
+
+The app exposes a basic web app manifest with Polish app naming (`Ekipa`),
+standalone display mode, `/ideas` as the start URL, and a mobile theme color.
+
+Full installability still needs real app icons, including 192px, 512px, and
+maskable variants. Push notifications, offline Supabase caching, background
+sync, and service-worker behavior are intentionally not implemented yet.
+
 ## Checks
 
 ```bash

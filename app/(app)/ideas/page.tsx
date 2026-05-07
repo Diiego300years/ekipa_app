@@ -151,22 +151,24 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
               </div>
 
               <div className="mt-3 space-y-2">
-                <div className="flex justify-end">
-                  <Link
-                    className="inline-flex min-h-10 items-center rounded-md border border-teal-700 px-3 text-sm font-semibold text-teal-700 transition hover:bg-teal-50"
-                    href={`/ideas/${idea.id}/schedule`}
-                  >
-                    Zaplanuj
-                  </Link>
-                </div>
                 {idea.isOwnedByCurrentUser ? (
-                  <OwnerIdeaActions
-                    description={idea.description}
-                    ideaId={idea.id}
-                    location={idea.location}
-                    price={idea.price}
-                    title={idea.title}
-                  />
+                  <>
+                    <div className="flex justify-end">
+                      <Link
+                        className="inline-flex min-h-10 items-center rounded-md border border-teal-700 px-3 text-sm font-semibold text-teal-700 transition hover:bg-teal-50"
+                        href={`/ideas/${idea.id}/schedule`}
+                      >
+                        Zaplanuj
+                      </Link>
+                    </div>
+                    <OwnerIdeaActions
+                      description={idea.description}
+                      ideaId={idea.id}
+                      location={idea.location}
+                      price={idea.price}
+                      title={idea.title}
+                    />
+                  </>
                 ) : null}
               </div>
 

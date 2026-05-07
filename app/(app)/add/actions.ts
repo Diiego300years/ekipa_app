@@ -3,13 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
 import { validateIdeaFormData } from "@/lib/idea-form-validation";
 import { measureServerTiming } from "@/lib/performance/server-timing";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import type { AddIdeaActionState } from "./add-idea-state";
+
+type CreatedIdeaRow = {
+  id: string;
+};
 
 export async function createIdeaAction(
   _previousState: AddIdeaActionState,
@@ -33,6 +36,8 @@ export async function createIdeaAction(
     };
   }
 
+  let redirectPath = "";
+
   try {
     const supabase = await createServerSupabaseClient();
     const {
@@ -50,19 +55,23 @@ export async function createIdeaAction(
       };
     }
 
-    const { error } = await measureServerTiming(
+    const { data, error } = await measureServerTiming(
       "supabase.ideas.create",
       () =>
-        supabase.from("ideas").insert({
-          title: validation.values.title,
-          description: validation.values.description,
-          location: validation.values.location,
-          price: validation.values.price,
-          created_by: user.id,
-        }),
+        supabase
+          .from("ideas")
+          .insert({
+            title: validation.values.title,
+            description: validation.values.description,
+            location: validation.values.location,
+            price: validation.values.price,
+            created_by: user.id,
+          })
+          .select("id")
+          .single<CreatedIdeaRow>(),
     );
 
-    if (error) {
+    if (error || !data) {
       return {
         status: "error",
         message: "Nie udało się zapisać pomysłu. Spróbuj ponownie.",
@@ -72,6 +81,7 @@ export async function createIdeaAction(
 
     revalidatePath("/ideas");
     revalidatePath("/voting");
+    redirectPath = `/ideas/${data.id}/schedule?from=created`;
   } catch {
     return {
       status: "error",
@@ -80,7 +90,5 @@ export async function createIdeaAction(
     };
   }
 
-  redirect(
-    appendAuthRedirectMessage("/ideas", "success", "Pomysł został dodany."),
-  );
+  redirect(redirectPath);
 }

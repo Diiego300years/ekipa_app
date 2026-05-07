@@ -13,6 +13,8 @@ import {
 
 const authEmail = getTestEnv("E2E_AUTH_EMAIL");
 const authPassword = getTestEnv("E2E_AUTH_PASSWORD");
+const otherAuthEmail = getTestEnv("E2E_OTHER_AUTH_EMAIL");
+const otherAuthPassword = getTestEnv("E2E_OTHER_AUTH_PASSWORD");
 const registrationDomain = getTestEnv("E2E_AUTH_REGISTER_EMAIL_DOMAIN");
 const registrationPassword = getTestEnv("E2E_AUTH_REGISTER_PASSWORD");
 const resetEmail = getTestEnv("E2E_AUTH_RESET_EMAIL");
@@ -66,14 +68,22 @@ async function selectCalendarDate(page: Page, dateKey: string) {
   await dayButton.click();
 }
 
-async function logInAsAuthUser(page: Page) {
+async function logInWithCredentials(
+  page: Page,
+  email: string,
+  password: string,
+) {
   await page.goto("/login");
 
-  await page.getByLabel("Email").fill(authEmail);
-  await page.getByLabel("Hasło").fill(authPassword);
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Hasło").fill(password);
   await page.getByRole("button", { name: "Zaloguj się" }).click();
 
   await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
+}
+
+async function logInAsAuthUser(page: Page) {
+  await logInWithCredentials(page, authEmail, authPassword);
 }
 
 async function createIdeaThroughUi(page: Page, title: string) {
@@ -84,7 +94,15 @@ async function createIdeaThroughUi(page: Page, title: string) {
   await page.getByLabel("Cena").fill("25,50");
   await page.getByRole("button", { name: "Dodaj pomysł" }).click();
 
-  await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/ideas\/[0-9a-f-]+\/schedule\?from=created/, {
+    timeout: 15_000,
+  });
+  await expect(
+    page.getByText("Pomysł został dodany. Możesz teraz zaplanować termin."),
+  ).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Nie teraz" }).click();
+
+  await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
   await expect(page.getByRole("heading", { name: title })).toBeVisible({
     timeout: 15_000,
   });
@@ -492,14 +510,7 @@ test.describe("real Supabase ideas", () => {
 
       await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
 
-      await page.goto("/add");
-      await page.getByLabel("Tytuł").fill(title);
-      await page.getByLabel("Opis").fill("Pomysł utworzony przez test E2E.");
-      await page.getByLabel("Miejsce").fill("Testowe miejsce");
-      await page.getByLabel("Cena").fill("25,50");
-      await page.getByRole("button", { name: "Dodaj pomysł" }).click();
-
-      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      await createIdeaThroughUi(page, title);
       shouldCleanup = true;
 
       await expect(
@@ -512,6 +523,9 @@ test.describe("real Supabase ideas", () => {
         .first();
 
       await expect(createdIdeaCard.getByText("Cena: 25,50 zł")).toBeVisible();
+      await expect(
+        createdIdeaCard.getByRole("link", { name: "Zaplanuj" }),
+      ).toBeVisible();
     } finally {
       if (shouldCleanup) {
         await deleteGeneratedIdeaThroughRls(title);
@@ -657,14 +671,7 @@ test.describe("real Supabase voting", () => {
 
       await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
 
-      await page.goto("/add");
-      await page.getByLabel("Tytuł").fill(title);
-      await page.getByLabel("Opis").fill("Pomysł do głosowania E2E.");
-      await page.getByLabel("Miejsce").fill("Ranking testowy");
-      await page.getByLabel("Cena").fill("10");
-      await page.getByRole("button", { name: "Dodaj pomysł" }).click();
-
-      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      await createIdeaThroughUi(page, title);
       shouldCleanup = true;
 
       const ideaCard = page
@@ -870,6 +877,93 @@ test.describe("real Supabase scheduling", () => {
     "Set public Supabase env vars plus E2E_AUTH_EMAIL and E2E_AUTH_PASSWORD to run real scheduling E2E tests.",
   );
 
+  test("guest direct access to an existing idea schedule route shows login guidance", async ({
+    page,
+  }) => {
+    const title = createUniqueIdeaTitle();
+    let shouldCleanup = false;
+
+    try {
+      await logInAsAuthUser(page);
+      await createIdeaThroughUi(page, title);
+      shouldCleanup = true;
+
+      const { client, user } = await createAuthenticatedPublicClient();
+      let ideaId = "";
+
+      try {
+        ideaId = await findGeneratedIdeaIdThroughRls(client, user.id, title);
+      } finally {
+        await client.auth.signOut({ scope: "local" });
+      }
+
+      await page.getByRole("button", { name: "Wyloguj" }).click();
+      await expect(page).toHaveURL(/\/login$/, { timeout: 15_000 });
+
+      await page.goto(`/ideas/${ideaId}/schedule`);
+
+      await expect(
+        page.getByRole("heading", { name: "Zaplanuj pomysł" }),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByText("Zaloguj się, żeby zaplanować ten pomysł."),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "Przejdź do logowania" }),
+      ).toHaveAttribute("href", /\/login/);
+      await expect(page.getByTestId("schedule-idea-form")).toHaveCount(0);
+    } finally {
+      if (shouldCleanup) {
+        await deleteGeneratedIdeaThroughRls(title);
+      }
+    }
+  });
+
+  test("non-owner direct access to an idea schedule route is blocked", async ({
+    page,
+  }) => {
+    test.skip(
+      !otherAuthEmail || !otherAuthPassword,
+      "Set E2E_OTHER_AUTH_EMAIL and E2E_OTHER_AUTH_PASSWORD to run non-owner scheduling access tests.",
+    );
+
+    const title = createUniqueIdeaTitle();
+    let shouldCleanup = false;
+
+    try {
+      await logInAsAuthUser(page);
+      await createIdeaThroughUi(page, title);
+      shouldCleanup = true;
+
+      const { client, user } = await createAuthenticatedPublicClient();
+      let ideaId = "";
+
+      try {
+        ideaId = await findGeneratedIdeaIdThroughRls(client, user.id, title);
+      } finally {
+        await client.auth.signOut({ scope: "local" });
+      }
+
+      await page.getByRole("button", { name: "Wyloguj" }).click();
+      await expect(page).toHaveURL(/\/login$/, { timeout: 15_000 });
+      await logInWithCredentials(page, otherAuthEmail, otherAuthPassword);
+
+      await page.goto(`/ideas/${ideaId}/schedule`);
+
+      await expect(
+        page.getByRole("heading", { name: "Zaplanuj pomysł" }),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByText("Nie masz dostępu do planowania tego pomysłu."),
+      ).toBeVisible();
+      await expect(page.getByTestId("schedule-idea-form")).toHaveCount(0);
+    } finally {
+      if (shouldCleanup) {
+        await deleteGeneratedIdeaThroughRls(title);
+      }
+    }
+  });
+
   test("authenticated user can schedule an idea and clean it up through RLS", async ({
     page,
   }) => {
@@ -898,7 +992,15 @@ test.describe("real Supabase scheduling", () => {
       await page.getByLabel("Cena").fill("15");
       await page.getByRole("button", { name: "Dodaj pomysł" }).click();
 
-      await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+      await expect(page).toHaveURL(
+        /\/ideas\/[0-9a-f-]+\/schedule\?from=created/,
+        { timeout: 15_000 },
+      );
+      await expect(
+        page.getByText("Pomysł został dodany. Możesz teraz zaplanować termin."),
+      ).toBeVisible({ timeout: 15_000 });
+      await page.getByRole("button", { name: "Nie teraz" }).click();
+      await expect(page).toHaveURL(/\/ideas$/, { timeout: 15_000 });
       shouldCleanup = true;
 
       const ideaCard = page

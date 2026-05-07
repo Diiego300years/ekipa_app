@@ -58,7 +58,7 @@ export type SchedulingIdeaResult =
       idea: SchedulingIdea;
     }
   | {
-      status: "unconfigured" | "not-found" | "error";
+      status: "unconfigured" | "auth-required" | "not-found" | "no-access" | "error";
       idea: null;
     };
 
@@ -84,6 +84,7 @@ type SchedulingIdeaRow = {
   title: string;
   location: string | null;
   price: number | string | null;
+  created_by: string;
 };
 
 type ProfileRow = {
@@ -445,6 +446,7 @@ export async function getCalendarEventResponseSummary(
 
 export async function getIdeaForScheduling(
   ideaId: string,
+  currentUserId?: string | null,
 ): Promise<SchedulingIdeaResult> {
   if (!uuidPattern.test(ideaId)) {
     return {
@@ -467,7 +469,7 @@ export async function getIdeaForScheduling(
       () =>
         supabase
           .from("ideas")
-          .select("id,title,location,price")
+          .select("id,title,location,price,created_by")
           .eq("id", ideaId)
           .maybeSingle<SchedulingIdeaRow>(),
     );
@@ -482,6 +484,41 @@ export async function getIdeaForScheduling(
     if (!data) {
       return {
         status: "not-found",
+        idea: null,
+      };
+    }
+
+    let ownerUserId = currentUserId;
+
+    if (ownerUserId === undefined) {
+      const {
+        data: { user },
+        error: userError,
+      } = await measureServerTiming(
+        "supabase.calendar.getUserForScheduling",
+        () => supabase.auth.getUser(),
+      );
+
+      if (userError || !user) {
+        return {
+          status: "auth-required",
+          idea: null,
+        };
+      }
+
+      ownerUserId = user.id;
+    }
+
+    if (!ownerUserId) {
+      return {
+        status: "auth-required",
+        idea: null,
+      };
+    }
+
+    if (data.created_by !== ownerUserId) {
+      return {
+        status: "no-access",
         idea: null,
       };
     }
