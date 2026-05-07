@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { validateIdeaFormData } from "@/lib/idea-form-validation";
 import { measureServerTiming } from "@/lib/performance/server-timing";
@@ -13,6 +14,12 @@ import type { AddIdeaActionState } from "./add-idea-state";
 type CreatedIdeaRow = {
   id: string;
 };
+
+function getPushDisplayName(value: unknown) {
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : "Użytkownik";
+}
 
 export async function createIdeaAction(
   _previousState: AddIdeaActionState,
@@ -81,6 +88,21 @@ export async function createIdeaAction(
 
     revalidatePath("/ideas");
     revalidatePath("/voting");
+    after(async () => {
+      try {
+        const { sendNewIdeaPush } = await import("@/lib/push/push-admin");
+
+        await sendNewIdeaPush({
+          authorUserId: user.id,
+          authorDisplayName: getPushDisplayName(
+            user.user_metadata.display_name,
+          ),
+          ideaTitle: validation.values.title,
+        });
+      } catch {
+        console.warn("[push] New idea push delivery could not be scheduled.");
+      }
+    });
     redirectPath = `/ideas/${data.id}/schedule?from=created`;
   } catch {
     return {

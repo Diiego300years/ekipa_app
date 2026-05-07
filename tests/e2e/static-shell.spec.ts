@@ -71,6 +71,34 @@ test.describe("static shell", () => {
     }).toPass();
   });
 
+  test("shows guest guidance instead of notification permission prompts", async ({
+    page,
+  }) => {
+    await page.goto("/ideas");
+
+    const notificationSettings = page.getByTestId("notification-settings");
+
+    await expect(notificationSettings).toBeVisible();
+    await expect(
+      notificationSettings.getByText(
+        "Powiadomienia dotyczą tej przeglądarki lub urządzenia.",
+      ),
+    ).toBeVisible();
+    await expect(
+      notificationSettings.getByText(
+        "Zaloguj się, żeby włączyć powiadomienia na tym urządzeniu.",
+      ),
+    ).toBeVisible();
+    await expect(
+      notificationSettings.getByRole("link", { name: "Przejdź do logowania" }),
+    ).toHaveAttribute("href", /\/login/);
+    await expect(
+      notificationSettings.getByRole("button", {
+        name: "Włącz powiadomienia",
+      }),
+    ).toHaveCount(0);
+  });
+
   test("does not show owner idea actions to guests", async ({ page }) => {
     await page.goto("/ideas");
 

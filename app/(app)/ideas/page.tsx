@@ -5,6 +5,7 @@ import {
   appendAuthRedirectMessage,
   readAuthRedirectMessage,
 } from "@/lib/auth/redirect-message";
+import { getVapidPublicKey } from "@/lib/push/public-config";
 import {
   formatIdeaPrice,
   formatIdeaVoteCount,
@@ -13,6 +14,7 @@ import {
 import { getCurrentSupabaseUser } from "@/lib/supabase/session";
 
 import { IdeaComments } from "./idea-comments";
+import { NotificationSettings } from "./notification-settings";
 import { OwnerIdeaActions } from "./owner-idea-actions";
 import { VoteControl } from "./vote-control";
 
@@ -50,6 +52,11 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
     "error",
     "Zaloguj się, żeby dodać komentarz.",
   );
+  const pushLoginHref = appendAuthRedirectMessage(
+    "/login",
+    "error",
+    "Zaloguj się, żeby włączyć powiadomienia.",
+  );
 
   return (
     <section className="space-y-5">
@@ -65,6 +72,12 @@ export default async function IdeasPage({ searchParams }: IdeasPageProps) {
           Najnowsze propozycje zapisane przez ekipę.
         </p>
       </div>
+
+      <NotificationSettings
+        isAuthenticated={Boolean(user)}
+        loginHref={pushLoginHref}
+        vapidPublicKey={getVapidPublicKey()}
+      />
 
       {ideasResult.status === "unconfigured" ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium leading-6 text-amber-900">

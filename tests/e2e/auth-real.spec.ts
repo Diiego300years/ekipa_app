@@ -18,6 +18,7 @@ const otherAuthPassword = getTestEnv("E2E_OTHER_AUTH_PASSWORD");
 const registrationDomain = getTestEnv("E2E_AUTH_REGISTER_EMAIL_DOMAIN");
 const registrationPassword = getTestEnv("E2E_AUTH_REGISTER_PASSWORD");
 const resetEmail = getTestEnv("E2E_AUTH_RESET_EMAIL");
+const vapidPublicKey = getTestEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
 const supabasePublicConfig = getSupabasePublicTestConfig();
 
 function createRegistrationEmail(domain: string) {
@@ -84,6 +85,100 @@ async function logInWithCredentials(
 
 async function logInAsAuthUser(page: Page) {
   await logInWithCredentials(page, authEmail, authPassword);
+}
+
+async function mockPushApis(
+  page: Page,
+  options: {
+    permission: "default" | "denied" | "granted";
+    subscriptionMode?: "none" | "invalid" | "invalid-endpoint";
+  },
+) {
+  await page.addInitScript((mockOptions) => {
+    let currentPermission = mockOptions.permission;
+    const notification = function MockNotification() {};
+
+    Object.defineProperty(notification, "permission", {
+      configurable: true,
+      get: () => currentPermission,
+    });
+    Object.defineProperty(notification, "requestPermission", {
+      configurable: true,
+      value: async () => {
+        currentPermission =
+          currentPermission === "default" ? "granted" : currentPermission;
+
+        return currentPermission;
+      },
+    });
+
+    const createSubscription = () => {
+      if (mockOptions.subscriptionMode === "invalid") {
+        return {
+          endpoint: "",
+          toJSON: () => ({
+            endpoint: "",
+            keys: {},
+          }),
+          unsubscribe: async () => true,
+        };
+      }
+
+      if (mockOptions.subscriptionMode === "invalid-endpoint") {
+        return {
+          endpoint: "",
+          toJSON: () => ({
+            endpoint: "",
+            keys: {
+              auth: "test-auth",
+              p256dh: "test-p256dh",
+            },
+          }),
+          unsubscribe: async () => true,
+        };
+      }
+
+      return null;
+    };
+    const registration = {
+      pushManager: {
+        getSubscription: async () => createSubscription(),
+        subscribe: async () => createSubscription(),
+      },
+    };
+
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: notification,
+    });
+    Object.defineProperty(window, "PushManager", {
+      configurable: true,
+      value: function MockPushManager() {},
+    });
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        register: async () => registration,
+      },
+    });
+  }, options);
+}
+
+async function mockUnsupportedPushApis(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(window, "PushManager", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
 }
 
 async function createIdeaThroughUi(page: Page, title: string) {
@@ -431,6 +526,164 @@ test.describe("real Supabase login", () => {
     await expect(page).toHaveURL(/\/login$/, { timeout: 15_000 });
     await expect(
       page.getByRole("heading", { name: "Zaloguj się" }),
+    ).toBeVisible();
+  });
+
+  test("authenticated user sees missing public push key guidance", async ({
+    page,
+  }) => {
+    test.skip(
+      Boolean(vapidPublicKey),
+      "This state is only visible when NEXT_PUBLIC_VAPID_PUBLIC_KEY is empty.",
+    );
+
+    await logInAsAuthUser(page);
+
+    const notificationSettings = page.getByTestId("notification-settings");
+
+    await expect(notificationSettings).toBeVisible();
+    await expect(
+      notificationSettings.getByText(
+        "Powiadomienia są niedostępne, bo brakuje konfiguracji klucza publicznego.",
+      ),
+    ).toBeVisible();
+  });
+
+  test("authenticated user sees denied notification guidance", async ({
+    page,
+  }) => {
+    test.skip(
+      !vapidPublicKey,
+      "Set NEXT_PUBLIC_VAPID_PUBLIC_KEY to test browser permission states.",
+    );
+
+    await mockPushApis(page, {
+      permission: "denied",
+      subscriptionMode: "none",
+    });
+    await logInAsAuthUser(page);
+
+    const notificationSettings = page.getByTestId("notification-settings");
+
+    await expect(
+      notificationSettings.getByText(
+        "Powiadomienia są zablokowane w ustawieniach przeglądarki lub systemu.",
+      ),
+    ).toBeVisible();
+    await expect(
+      notificationSettings.getByRole("button", {
+        name: "Włącz powiadomienia",
+      }),
+    ).toHaveCount(0);
+  });
+
+  test("authenticated user sees unsupported notification guidance", async ({
+    page,
+  }) => {
+    test.skip(
+      !vapidPublicKey,
+      "Set NEXT_PUBLIC_VAPID_PUBLIC_KEY to test browser support states.",
+    );
+
+    await mockUnsupportedPushApis(page);
+    await logInAsAuthUser(page);
+
+    const notificationSettings = page.getByTestId("notification-settings");
+
+    await expect(
+      notificationSettings.getByText(
+        "Ta przeglądarka nie obsługuje powiadomień push.",
+      ),
+    ).toBeVisible();
+  });
+
+  test("authenticated user sees enable action for default notification permission", async ({
+    page,
+  }) => {
+    test.skip(
+      !vapidPublicKey,
+      "Set NEXT_PUBLIC_VAPID_PUBLIC_KEY to test browser permission states.",
+    );
+
+    await mockPushApis(page, {
+      permission: "default",
+      subscriptionMode: "none",
+    });
+    await logInAsAuthUser(page);
+
+    const notificationSettings = page.getByTestId("notification-settings");
+
+    await expect(
+      notificationSettings.getByText(
+        "Możesz włączyć powiadomienia o nowych pomysłach.",
+      ),
+    ).toBeVisible();
+    await expect(
+      notificationSettings.getByRole("button", {
+        name: "Włącz powiadomienia",
+      }),
+    ).toBeVisible();
+  });
+
+  test("authenticated user sees save failure messaging for invalid browser subscription", async ({
+    page,
+  }) => {
+    test.skip(
+      !vapidPublicKey,
+      "Set NEXT_PUBLIC_VAPID_PUBLIC_KEY to test browser permission states.",
+    );
+
+    await mockPushApis(page, {
+      permission: "default",
+      subscriptionMode: "invalid",
+    });
+    await logInAsAuthUser(page);
+
+    const notificationSettings = page.getByTestId("notification-settings");
+
+    await notificationSettings
+      .getByRole("button", { name: "Włącz powiadomienia" })
+      .click();
+
+    await expect(
+      notificationSettings.getByText(
+        "Nie udało się zapisać powiadomień. Spróbuj ponownie.",
+      ),
+    ).toBeVisible();
+  });
+
+  test("authenticated user can retry database removal after browser unsubscribe", async ({
+    page,
+  }) => {
+    test.skip(
+      !vapidPublicKey,
+      "Set NEXT_PUBLIC_VAPID_PUBLIC_KEY to test browser permission states.",
+    );
+
+    await mockPushApis(page, {
+      permission: "granted",
+      subscriptionMode: "invalid-endpoint",
+    });
+    await logInAsAuthUser(page);
+
+    const notificationSettings = page.getByTestId("notification-settings");
+
+    await expect(
+      notificationSettings.getByText(
+        "Powiadomienia są włączone na tym urządzeniu.",
+      ),
+    ).toBeVisible();
+    await notificationSettings
+      .getByRole("button", { name: "Wyłącz powiadomienia" })
+      .click();
+
+    await expect(
+      notificationSettings.getByText(
+        "Powiadomienia wyłączono w przeglądarce, ale nie udało się usunąć zapisu z bazy.",
+      ),
+    ).toBeVisible();
+    await expect(
+      notificationSettings.getByRole("button", { name: "Spróbuj ponownie" }),
     ).toBeVisible();
   });
 });

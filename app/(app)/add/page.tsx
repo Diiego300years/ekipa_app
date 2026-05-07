@@ -1,5 +1,7 @@
 import { AddIdeaForm } from "./add-idea-form";
 
+export const runtime = "nodejs";
+
 export default function AddPage() {
   return (
     <section className="space-y-5">
