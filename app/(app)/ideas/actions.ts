@@ -26,8 +26,8 @@ type SupabaseMutationError = {
   code?: string;
 };
 
-type ConfirmedVoteRow = {
-  user_id: string;
+type CurrentUserVoteRow = {
+  idea_id: string;
 };
 
 type CreatedIdeaCommentRow = {
@@ -67,22 +67,51 @@ async function getConfirmedVoteState(
   supabase: SupabaseServerClient,
   ideaId: string,
   userId: string,
+  expectedHasCurrentUserVote?: boolean,
 ): Promise<ConfirmedVoteState | null> {
-  const { data, error } = await measureServerTiming(
-    "supabase.votes.confirmedState",
-    () => supabase.from("votes").select("user_id").eq("idea_id", ideaId),
+  const voteCountPromise = measureServerTiming(
+    "supabase.votes.confirmedCount",
+    () =>
+      supabase
+        .from("votes")
+        .select("id", { count: "exact", head: true })
+        .eq("idea_id", ideaId),
   );
+  const currentUserVotePromise =
+    expectedHasCurrentUserVote === undefined
+      ? measureServerTiming("supabase.votes.confirmedCurrentUser", () =>
+          supabase
+            .from("votes")
+            .select("idea_id")
+            .eq("idea_id", ideaId)
+            .eq("user_id", userId)
+            .limit(1),
+        )
+      : Promise.resolve({
+          data: [] as CurrentUserVoteRow[],
+          error: null,
+          hasCurrentUserVote: expectedHasCurrentUserVote,
+        });
+  const [voteCountResult, currentUserVoteResult] = await Promise.all([
+    voteCountPromise,
+    currentUserVotePromise,
+  ]);
 
-  if (error) {
+  if (voteCountResult.error || currentUserVoteResult.error) {
     return null;
   }
 
-  const voteRows = (data ?? []) as ConfirmedVoteRow[];
+  const hasCurrentUserVote =
+    "hasCurrentUserVote" in currentUserVoteResult
+      ? currentUserVoteResult.hasCurrentUserVote
+      : ((currentUserVoteResult.data ?? []) as CurrentUserVoteRow[]).some(
+          (vote) => vote.idea_id === ideaId,
+        );
 
   return {
     ideaId,
-    voteCount: voteRows.length,
-    hasCurrentUserVote: voteRows.some((vote) => vote.user_id === userId),
+    voteCount: voteCountResult.count ?? 0,
+    hasCurrentUserVote,
   };
 }
 
@@ -212,27 +241,32 @@ export async function voteForIdeaAction(
         }),
     );
 
-    const confirmedState = await getConfirmedVoteState(
-      supabase,
-      ideaId,
-      user.id,
-    );
-
-    if (!confirmedState) {
-      return voteActionError(
-        "error",
-        "Nie udało się potwierdzić wyniku głosowania. Odśwież stronę.",
-        ideaId,
-      );
-    }
-
     if (error) {
       const mutationError = error as SupabaseMutationError;
 
-      if (
-        mutationError.code === "23505" &&
-        confirmedState.hasCurrentUserVote
-      ) {
+      if (mutationError.code === "23505") {
+        const confirmedState = await getConfirmedVoteState(
+          supabase,
+          ideaId,
+          user.id,
+        );
+
+        if (!confirmedState) {
+          return voteActionError(
+            "error",
+            "Nie udało się potwierdzić wyniku głosowania. Odśwież stronę.",
+            ideaId,
+          );
+        }
+
+        if (!confirmedState.hasCurrentUserVote) {
+          return voteActionError(
+            "error",
+            "Nie udało się potwierdzić oddanego głosu. Odśwież stronę.",
+            ideaId,
+          );
+        }
+
         return voteActionSuccess(
           confirmedState,
           "Oddano już głos na ten pomysł.",
@@ -242,6 +276,21 @@ export async function voteForIdeaAction(
       return voteActionError(
         "error",
         "Nie udało się oddać głosu. Spróbuj ponownie.",
+        ideaId,
+      );
+    }
+
+    const confirmedState = await getConfirmedVoteState(
+      supabase,
+      ideaId,
+      user.id,
+      true,
+    );
+
+    if (!confirmedState) {
+      return voteActionError(
+        "error",
+        "Nie udało się potwierdzić wyniku głosowania. Odśwież stronę.",
         ideaId,
       );
     }
@@ -323,6 +372,7 @@ export async function removeVoteForIdeaAction(
       supabase,
       ideaId,
       user.id,
+      false,
     );
 
     if (!confirmedState) {

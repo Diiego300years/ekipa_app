@@ -7,7 +7,11 @@ import {
   performanceAuthEmail,
   performanceAuthPassword,
 } from "./support/real-supabase";
-import { getPerformanceTargetLabel, measureAndLog } from "./support/timing";
+import {
+  createTimingCollector,
+  getPerformanceTargetLabel,
+  performanceMeasurementRepetitions,
+} from "./support/timing";
 
 function createScheduleDateInput() {
   const date = new Date();
@@ -57,154 +61,169 @@ test.describe("real Supabase action performance diagnostics", () => {
   });
 
   test("measures authenticated server action timings", async ({ page }) => {
-    const title = createPerformanceDataText("idea");
-    const commentBody = createPerformanceDataText("comment");
-    const eventNote = createPerformanceDataText("event");
-    const scheduleDate = createScheduleDateInput();
-    let shouldCleanupIdea = false;
-    let shouldCleanupComment = false;
-    let shouldCleanupEvent = false;
+    const timings = createTimingCollector("action");
 
-    try {
-      await logIn(page);
+    await logIn(page);
 
-      await page.goto("/add");
-      await page.getByLabel("Tytuł").fill(title);
-      await page
-        .getByLabel("Opis")
-        .fill("Generated performance diagnostic idea.");
-      await page.getByLabel("Miejsce").fill("Performance diagnostics");
-      await page.getByLabel("Cena").fill("10");
+    for (
+      let runIndex = 0;
+      runIndex < performanceMeasurementRepetitions;
+      runIndex += 1
+    ) {
+      const title = createPerformanceDataText(`idea ${runIndex + 1}`);
+      const commentBody = createPerformanceDataText(`comment ${runIndex + 1}`);
+      const eventNote = createPerformanceDataText(`event ${runIndex + 1}`);
+      const scheduleDate = createScheduleDateInput();
+      let shouldCleanupIdea = false;
+      let shouldCleanupComment = false;
+      let shouldCleanupEvent = false;
 
-      await measureAndLog("action add idea", "action", async () => {
-        await page.getByRole("button", { name: "Dodaj pomysł" }).click();
+      try {
+        await page.goto("/add");
+        await page.getByLabel("Tytuł").fill(title);
+        await page
+          .getByLabel("Opis")
+          .fill("Generated performance diagnostic idea.");
+        await page.getByLabel("Miejsce").fill("Performance diagnostics");
+        await page.getByLabel("Cena").fill("10");
 
-        await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
-        await expect(page.getByText("Pomysł został dodany.")).toBeVisible({
-          timeout: 15_000,
+        await timings.measure("action add idea", async () => {
+          await page.getByRole("button", { name: "Dodaj pomysł" }).click();
+
+          await expect(page).toHaveURL(/\/ideas/, { timeout: 15_000 });
+          await expect(page.getByText("Pomysł został dodany.")).toBeVisible({
+            timeout: 15_000,
+          });
+          shouldCleanupIdea = true;
+          await expect(
+            page.getByTestId("idea-card").filter({ hasText: title }).first(),
+          ).toBeVisible({ timeout: 15_000 });
         });
-        shouldCleanupIdea = true;
-        await expect(
-          page.getByTestId("idea-card").filter({ hasText: title }).first(),
-        ).toBeVisible({ timeout: 15_000 });
-      });
 
-      const ideaCard = page
-        .getByTestId("idea-card")
-        .filter({ hasText: title })
-        .first();
-
-      await measureAndLog("action vote", "action", async () => {
-        await ideaCard.getByRole("button", { name: "Głosuj" }).click();
-
-        await expect(page.getByText("Głos został oddany.")).toBeVisible({
-          timeout: 15_000,
-        });
-        await expect(
-          page
-            .getByTestId("idea-card")
-            .filter({ hasText: title })
-            .first()
-            .getByRole("button", { name: "Cofnij głos" }),
-        ).toBeVisible({ timeout: 15_000 });
-      });
-
-      await measureAndLog("action undo vote", "action", async () => {
-        const votedIdeaCard = page
+        const ideaCard = page
           .getByTestId("idea-card")
           .filter({ hasText: title })
           .first();
 
-        await votedIdeaCard
-          .getByRole("button", { name: "Cofnij głos" })
-          .click();
+        await timings.measure("action vote", async () => {
+          await ideaCard.getByRole("button", { name: "Głosuj" }).click();
 
-        await expect(
-          votedIdeaCard.getByRole("button", { name: "Głosuj" }),
-        ).toBeVisible({ timeout: 15_000 });
-        await expect(votedIdeaCard.getByTestId("idea-vote-count")).toHaveText(
-          "0 głosów",
-          {
+          await expect(page.getByText("Głos został oddany.")).toBeVisible({
             timeout: 15_000,
-          },
-        );
-        await expect(
-          votedIdeaCard.getByRole("button", { name: "Cofnij głos" }),
-        ).toHaveCount(0, {
-          timeout: 15_000,
+          });
+          await expect(
+            page
+              .getByTestId("idea-card")
+              .filter({ hasText: title })
+              .first()
+              .getByRole("button", { name: "Cofnij głos" }),
+          ).toBeVisible({ timeout: 15_000 });
         });
-      });
 
-      const commentIdeaCard = page
-        .getByTestId("idea-card")
-        .filter({ hasText: title })
-        .first();
-      const commentForm = commentIdeaCard.getByTestId("idea-comment-form");
-
-      await commentForm.getByLabel("Komentarz").fill(commentBody);
-
-      await measureAndLog("action add comment", "action", async () => {
-        await commentForm
-          .getByRole("button", { name: "Dodaj komentarz" })
-          .click();
-
-        await expect(page.getByText("Komentarz został dodany.")).toBeVisible({
-          timeout: 15_000,
-        });
-        shouldCleanupComment = true;
-        await expect(
-          page
+        await timings.measure("action undo vote", async () => {
+          const votedIdeaCard = page
             .getByTestId("idea-card")
             .filter({ hasText: title })
-            .first()
-            .getByTestId("idea-comment")
-            .filter({ hasText: commentBody })
-            .first(),
-        ).toBeVisible({ timeout: 15_000 });
-      });
+            .first();
 
-      await page
-        .getByTestId("idea-card")
-        .filter({ hasText: title })
-        .first()
-        .getByRole("link", { name: "Zaplanuj" })
-        .click();
+          await votedIdeaCard
+            .getByRole("button", { name: "Cofnij głos" })
+            .click();
 
-      await expect(
-        page.getByRole("heading", { name: `Zaplanuj: ${title}` }),
-      ).toBeVisible({ timeout: 15_000 });
+          await expect(
+            votedIdeaCard.getByRole("button", { name: "Głosuj" }),
+          ).toBeVisible({ timeout: 15_000 });
+          await expect(votedIdeaCard.getByTestId("idea-vote-count")).toHaveText(
+            "0 głosów",
+            {
+              timeout: 15_000,
+            },
+          );
+          await expect(
+            votedIdeaCard.getByRole("button", { name: "Cofnij głos" }),
+          ).toHaveCount(0, {
+            timeout: 15_000,
+          });
+        });
 
-      const scheduleForm = page.getByTestId("schedule-idea-form");
+        const commentIdeaCard = page
+          .getByTestId("idea-card")
+          .filter({ hasText: title })
+          .first();
+        const commentForm = commentIdeaCard.getByTestId("idea-comment-form");
 
-      await scheduleForm.getByLabel("Data").fill(scheduleDate);
-      await scheduleForm.getByLabel("Godzina rozpoczęcia").fill("18:30");
-      await scheduleForm.getByLabel("Godzina zakończenia").fill("20:00");
-      await scheduleForm.getByLabel("Notatka").fill(eventNote);
+        await commentForm.getByLabel("Komentarz").fill(commentBody);
 
-      await measureAndLog("action schedule event", "action", async () => {
-        await scheduleForm
-          .getByRole("button", { name: "Zaplanuj pomysł" })
+        await timings.measure("action add comment", async () => {
+          await commentForm
+            .getByRole("button", { name: "Dodaj komentarz" })
+            .click();
+
+          await expect(page.getByText("Komentarz został dodany.")).toBeVisible({
+            timeout: 15_000,
+          });
+          shouldCleanupComment = true;
+          await expect(
+            page
+              .getByTestId("idea-card")
+              .filter({ hasText: title })
+              .first()
+              .getByTestId("idea-comment")
+              .filter({ hasText: commentBody })
+              .first(),
+          ).toBeVisible({ timeout: 15_000 });
+        });
+
+        await page
+          .getByTestId("idea-card")
+          .filter({ hasText: title })
+          .first()
+          .getByRole("link", { name: "Zaplanuj" })
           .click();
 
-        await expect(page).toHaveURL(/\/calendar/, { timeout: 15_000 });
-        await expect(page.getByText("Pomysł został zaplanowany.")).toBeVisible({
-          timeout: 15_000,
-        });
-        shouldCleanupEvent = true;
-
-        await selectCalendarDate(page, scheduleDate);
         await expect(
-          page.getByTestId("calendar-event").filter({ hasText: title }).first(),
+          page.getByRole("heading", { name: `Zaplanuj: ${title}` }),
         ).toBeVisible({ timeout: 15_000 });
-      });
-    } finally {
-      if (shouldCleanupIdea) {
-        await deleteGeneratedPerformanceDataThroughRls({
-          title,
-          commentBody: shouldCleanupComment ? commentBody : undefined,
-          eventNote: shouldCleanupEvent ? eventNote : undefined,
+
+        const scheduleForm = page.getByTestId("schedule-idea-form");
+
+        await scheduleForm.getByLabel("Data").fill(scheduleDate);
+        await scheduleForm.getByLabel("Godzina rozpoczęcia").fill("18:30");
+        await scheduleForm.getByLabel("Godzina zakończenia").fill("20:00");
+        await scheduleForm.getByLabel("Notatka").fill(eventNote);
+
+        await timings.measure("action schedule event", async () => {
+          await scheduleForm
+            .getByRole("button", { name: "Zaplanuj pomysł" })
+            .click();
+
+          await expect(page).toHaveURL(/\/calendar/, { timeout: 15_000 });
+          await expect(
+            page.getByText("Pomysł został zaplanowany."),
+          ).toBeVisible({
+            timeout: 15_000,
+          });
+          shouldCleanupEvent = true;
+
+          await selectCalendarDate(page, scheduleDate);
+          await expect(
+            page
+              .getByTestId("calendar-event")
+              .filter({ hasText: title })
+              .first(),
+          ).toBeVisible({ timeout: 15_000 });
         });
+      } finally {
+        if (shouldCleanupIdea) {
+          await deleteGeneratedPerformanceDataThroughRls({
+            title,
+            commentBody: shouldCleanupComment ? commentBody : undefined,
+            eventNote: shouldCleanupEvent ? eventNote : undefined,
+          });
+        }
       }
     }
+
+    timings.logSummary();
   });
 });

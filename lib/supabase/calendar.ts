@@ -272,8 +272,15 @@ export async function getCalendarEventsForList(
     const ideasById = new Map<string, IdeaSummaryRow>();
     const responsesByEventId = new Map<string, CalendarEventResponseRow[]>();
     let profilesById = new Map<string, string>();
+    const eventIds = eventRows.map((event) => event.id);
+    const ideasPromise = (async () => {
+      if (ideaIds.length === 0) {
+        return {
+          data: [] as IdeaSummaryRow[],
+          error: null,
+        };
+      }
 
-    if (ideaIds.length > 0) {
       const { data: ideaData, error: ideaError } = await measureServerTiming(
         "supabase.calendar.ideasForEvents",
         () =>
@@ -283,23 +290,19 @@ export async function getCalendarEventsForList(
             .in("id", ideaIds),
       );
 
-      if (ideaError) {
+      return {
+        data: (ideaData ?? []) as IdeaSummaryRow[],
+        error: ideaError,
+      };
+    })();
+    const responsesPromise = (async () => {
+      if (eventRows.length === 0) {
         return {
-          status: "error",
-          events: [],
+          data: [] as CalendarEventResponseRow[],
+          error: null,
         };
       }
 
-      const ideaRows = (ideaData ?? []) as IdeaSummaryRow[];
-
-      for (const idea of ideaRows) {
-        ideasById.set(idea.id, idea);
-        profileIds.add(idea.created_by);
-      }
-    }
-
-    if (eventRows.length > 0) {
-      const eventIds = eventRows.map((event) => event.id);
       const { data: responseData, error: responseError } =
         await measureServerTiming(
           "supabase.calendar.responsesForEvents",
@@ -311,18 +314,37 @@ export async function getCalendarEventsForList(
               .order("created_at", { ascending: true }),
         );
 
-      if (!responseError) {
-        const responseRows = (responseData ?? []) as CalendarEventResponseRow[];
+      return {
+        data: (responseData ?? []) as CalendarEventResponseRow[],
+        error: responseError,
+      };
+    })();
+    const [ideaResult, responseResult] = await Promise.all([
+      ideasPromise,
+      responsesPromise,
+    ]);
 
-        for (const response of responseRows) {
-          profileIds.add(response.user_id);
+    if (ideaResult.error) {
+      return {
+        status: "error",
+        events: [],
+      };
+    }
 
-          const eventResponses =
-            responsesByEventId.get(response.event_id) ?? [];
+    for (const idea of ideaResult.data) {
+      ideasById.set(idea.id, idea);
+      profileIds.add(idea.created_by);
+    }
 
-          eventResponses.push(response);
-          responsesByEventId.set(response.event_id, eventResponses);
-        }
+    if (!responseResult.error) {
+      for (const response of responseResult.data) {
+        profileIds.add(response.user_id);
+
+        const eventResponses =
+          responsesByEventId.get(response.event_id) ?? [];
+
+        eventResponses.push(response);
+        responsesByEventId.set(response.event_id, eventResponses);
       }
     }
 

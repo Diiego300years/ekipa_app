@@ -3,6 +3,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 type RouteDiagnostics = {
   heading: string;
   knownStates: (page: Page) => Locator[];
+  requiredStates?: (page: Page) => Locator[];
 };
 
 const routes: Record<string, RouteDiagnostics> = {
@@ -26,6 +27,10 @@ const routes: Record<string, RouteDiagnostics> = {
   },
   "/calendar": {
     heading: "Kalendarz",
+    requiredStates: (page: Page) => [
+      page.getByTestId("calendar-grid"),
+      page.getByTestId("calendar-selected-events"),
+    ],
     knownStates: (page: Page) => [
       page.getByText("Kalendarz będzie dostępny po skonfigurowaniu Supabase."),
       page.getByText("Nie udało się wczytać kalendarza."),
@@ -48,6 +53,10 @@ export async function waitForRouteReady(page: Page, path: string) {
   await expect(
     page.getByRole("heading", { name: route.heading }),
   ).toBeVisible({ timeout: 15_000 });
+
+  for (const locator of route.requiredStates?.(page) ?? []) {
+    await expect(locator).toBeVisible({ timeout: 15_000 });
+  }
 
   await expect(async () => {
     const visibleStates = await Promise.all(

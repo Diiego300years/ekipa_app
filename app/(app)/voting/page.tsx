@@ -1,10 +1,7 @@
-import { formatIdeaVoteCount, getIdeasForList } from "@/lib/supabase/ideas";
+import { formatIdeaVoteCount, getIdeasForRanking } from "@/lib/supabase/ideas";
 
 export default async function VotingPage() {
-  const ideasResult = await getIdeasForList({
-    includeCurrentUserVoteState: false,
-    sort: "ranking",
-  });
+  const ideasResult = await getIdeasForRanking();
 
   return (
     <section className="space-y-5">

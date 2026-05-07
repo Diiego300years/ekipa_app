@@ -26,29 +26,39 @@ A mobile-first calendar PWA for a small private group. The app helps users add i
 ```bash
 npm run dev
 npm run lint
+npm run typecheck
 npm run build
 npm run start
+npm run test:e2e
+npm run test:perf
 ```
 
-## Planned Checks
+## Performance Diagnostics
 
-The project documentation expects these checks once the related scripts and tools are configured:
+`npm run test:perf` runs Playwright performance diagnostics separately from
+normal E2E tests. Without `PLAYWRIGHT_BASE_URL`, the performance config may
+start a local development server on `http://127.0.0.1:3000`.
+
+For local production-mode performance testing, use two terminals:
+
+```bash
+npm run build && npm run start
+```
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 npm run test:perf
+```
+
+When `PLAYWRIGHT_BASE_URL` is provided, performance tests target that existing
+server and do not start the local development server fallback.
+
+## Checks
 
 ```bash
 npm run typecheck
+npm run lint
 npm run test:e2e
-```
-
-Until a `typecheck` script exists, use:
-
-```bash
-npx tsc --noEmit
-```
-
-Until a `test:e2e` script exists, use Playwright directly after Playwright is configured:
-
-```bash
-npx playwright test
+npm run build
 ```
 
 ## Development Notes

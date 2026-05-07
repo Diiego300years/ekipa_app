@@ -1,7 +1,10 @@
 import { test } from "@playwright/test";
 
 import { measuredRoutes, waitForRouteReady } from "./support/routes";
-import { getPerformanceTargetLabel, measureAndLog } from "./support/timing";
+import {
+  getPerformanceTargetLabel,
+  measureRepeatedAndLog,
+} from "./support/timing";
 
 test.describe("route performance diagnostics", () => {
   test.beforeAll(() => {
@@ -10,7 +13,7 @@ test.describe("route performance diagnostics", () => {
 
   for (const path of measuredRoutes) {
     test(`measures ${path} load time`, async ({ page }) => {
-      await measureAndLog(`route ${path}`, "route", async () => {
+      await measureRepeatedAndLog(`route ${path}`, "route", async () => {
         await page.goto(path, { waitUntil: "domcontentloaded" });
         await waitForRouteReady(page, path);
       });

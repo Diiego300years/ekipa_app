@@ -38,6 +38,24 @@ export type IdeasListResult =
       ideas: [];
     };
 
+export type IdeaRankingItem = {
+  id: string;
+  title: string;
+  location: string | null;
+  createdAt: string;
+  voteCount: number;
+};
+
+export type IdeaRankingResult =
+  | {
+      status: "ready";
+      ideas: IdeaRankingItem[];
+    }
+  | {
+      status: "unconfigured" | "error";
+      ideas: [];
+    };
+
 export type EditableIdea = {
   id: string;
   title: string;
@@ -66,6 +84,13 @@ type IdeaRow = {
   created_at: string;
 };
 
+type IdeaRankingRow = {
+  id: string;
+  title: string;
+  location: string | null;
+  created_at: string;
+};
+
 type EditableIdeaRow = {
   id: string;
   title: string;
@@ -81,6 +106,7 @@ type ProfileRow = {
 
 type VoteRow = {
   idea_id: string;
+  user_id?: string;
 };
 
 type IdeaCommentRow = {
@@ -110,6 +136,7 @@ type IdeasListOptions = {
 const fallbackAuthorName = "Użytkownik";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 
 function normalizePrice(price: number | string | null) {
   if (price === null) {
@@ -138,6 +165,107 @@ function sortIdeasForRanking(ideas: IdeaListItem[]) {
 
     return first.id.localeCompare(second.id);
   });
+}
+
+function sortRankingItems(ideas: IdeaRankingItem[]) {
+  return ideas.sort((first, second) => {
+    const voteDifference = second.voteCount - first.voteCount;
+
+    if (voteDifference !== 0) {
+      return voteDifference;
+    }
+
+    const dateDifference =
+      new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
+
+    if (dateDifference !== 0) {
+      return dateDifference;
+    }
+
+    return first.id.localeCompare(second.id);
+  });
+}
+
+function createEmptyVoteState() {
+  return {
+    voteCountsByIdeaId: new Map<string, number>(),
+    currentUserVotedIdeaIds: new Set<string>(),
+  };
+}
+
+function mapVoteState(voteRows: VoteRow[], currentUserId: string | null) {
+  const voteState = createEmptyVoteState();
+
+  for (const vote of voteRows) {
+    voteState.voteCountsByIdeaId.set(
+      vote.idea_id,
+      (voteState.voteCountsByIdeaId.get(vote.idea_id) ?? 0) + 1,
+    );
+
+    if (currentUserId && vote.user_id === currentUserId) {
+      voteState.currentUserVotedIdeaIds.add(vote.idea_id);
+    }
+  }
+
+  return voteState;
+}
+
+async function getVoteStateForIdeaIds({
+  supabase,
+  ideaIds,
+  includeCurrentUserVoteState,
+  currentUserId,
+  timingLabel,
+}: {
+  supabase: SupabaseServerClient;
+  ideaIds: string[];
+  includeCurrentUserVoteState: boolean;
+  currentUserId: string | null;
+  timingLabel: string;
+}) {
+  if (ideaIds.length === 0) {
+    return createEmptyVoteState();
+  }
+
+  const shouldSelectUserIds = includeCurrentUserVoteState && Boolean(currentUserId);
+  const { data, error } = await measureServerTiming(timingLabel, () =>
+    shouldSelectUserIds
+      ? supabase.from("votes").select("idea_id,user_id").in("idea_id", ideaIds)
+      : supabase.from("votes").select("idea_id").in("idea_id", ideaIds),
+  );
+
+  if (!error) {
+    return mapVoteState((data ?? []) as VoteRow[], currentUserId);
+  }
+
+  if (!shouldSelectUserIds || !currentUserId) {
+    return null;
+  }
+
+  const [voteResult, currentUserVoteResult] = await Promise.all([
+    measureServerTiming(`${timingLabel}:fallbackCounts`, () =>
+      supabase.from("votes").select("idea_id").in("idea_id", ideaIds),
+    ),
+    measureServerTiming(`${timingLabel}:fallbackCurrentUser`, () =>
+      supabase
+        .from("votes")
+        .select("idea_id")
+        .in("idea_id", ideaIds)
+        .eq("user_id", currentUserId),
+    ),
+  ]);
+
+  if (voteResult.error || currentUserVoteResult.error) {
+    return null;
+  }
+
+  const voteState = mapVoteState((voteResult.data ?? []) as VoteRow[], null);
+
+  for (const vote of (currentUserVoteResult.data ?? []) as VoteRow[]) {
+    voteState.currentUserVotedIdeaIds.add(vote.idea_id);
+  }
+
+  return voteState;
 }
 
 export async function getIdeasForList(
@@ -188,11 +316,15 @@ export async function getIdeasForList(
       ideaRows.map((idea) => idea.created_by).filter(Boolean),
     );
     const profilesById = new Map<string, string>();
-    const voteCountsByIdeaId = new Map<string, number>();
-    const currentUserVotedIdeaIds = new Set<string>();
     const commentsByIdeaId = new Map<string, IdeaCommentRow[]>();
+    const commentsPromise = (async () => {
+      if (!options.includeComments || ideaIds.length === 0) {
+        return {
+          error: null,
+          rows: [] as IdeaCommentRow[],
+        };
+      }
 
-    if (options.includeComments && ideaIds.length > 0) {
       const { data: commentData, error: commentError } =
         await measureServerTiming("supabase.ideas.commentsForList", () =>
           supabase
@@ -202,23 +334,37 @@ export async function getIdeasForList(
             .order("created_at", { ascending: true }),
         );
 
-      if (commentError) {
-        return {
-          status: "error",
-          ideas: [],
-        };
-      }
+      return {
+        error: commentError,
+        rows: (commentData ?? []) as IdeaCommentRow[],
+      };
+    })();
+    const voteStatePromise = getVoteStateForIdeaIds({
+      supabase,
+      ideaIds,
+      includeCurrentUserVoteState,
+      currentUserId: currentUserId ?? null,
+      timingLabel: "supabase.ideas.votesForList",
+    });
+    const [commentResult, voteState] = await Promise.all([
+      commentsPromise,
+      voteStatePromise,
+    ]);
 
-      const commentRows = (commentData ?? []) as IdeaCommentRow[];
+    if (commentResult.error || !voteState) {
+      return {
+        status: "error",
+        ideas: [],
+      };
+    }
 
-      for (const comment of commentRows) {
-        profileIds.add(comment.user_id);
+    for (const comment of commentResult.rows) {
+      profileIds.add(comment.user_id);
 
-        const ideaComments = commentsByIdeaId.get(comment.idea_id) ?? [];
+      const ideaComments = commentsByIdeaId.get(comment.idea_id) ?? [];
 
-        ideaComments.push(comment);
-        commentsByIdeaId.set(comment.idea_id, ideaComments);
-      }
+      ideaComments.push(comment);
+      commentsByIdeaId.set(comment.idea_id, ideaComments);
     }
 
     const profileIdList = Array.from(profileIds);
@@ -244,53 +390,6 @@ export async function getIdeasForList(
       }
     }
 
-    if (ideaIds.length > 0) {
-      const { data: voteData, error: voteError } = await measureServerTiming(
-        "supabase.ideas.votesForList",
-        () => supabase.from("votes").select("idea_id").in("idea_id", ideaIds),
-      );
-
-      if (voteError) {
-        return {
-          status: "error",
-          ideas: [],
-        };
-      }
-
-      const voteRows = (voteData ?? []) as VoteRow[];
-
-      for (const vote of voteRows) {
-        voteCountsByIdeaId.set(
-          vote.idea_id,
-          (voteCountsByIdeaId.get(vote.idea_id) ?? 0) + 1,
-        );
-      }
-
-      if (includeCurrentUserVoteState && currentUserId) {
-        const { data: currentUserVoteData, error: currentUserVoteError } =
-          await measureServerTiming("supabase.ideas.currentUserVotes", () =>
-            supabase
-              .from("votes")
-              .select("idea_id")
-              .in("idea_id", ideaIds)
-              .eq("user_id", currentUserId),
-          );
-
-        if (currentUserVoteError) {
-          return {
-            status: "error",
-            ideas: [],
-          };
-        }
-
-        const currentUserVoteRows = (currentUserVoteData ?? []) as VoteRow[];
-
-        for (const vote of currentUserVoteRows) {
-          currentUserVotedIdeaIds.add(vote.idea_id);
-        }
-      }
-    }
-
     const ideas = ideaRows.map((idea) => ({
       id: idea.id,
       title: idea.title,
@@ -302,8 +401,8 @@ export async function getIdeasForList(
       isOwnedByCurrentUser: Boolean(
         currentUserId && currentUserId === idea.created_by,
       ),
-      voteCount: voteCountsByIdeaId.get(idea.id) ?? 0,
-      hasCurrentUserVote: currentUserVotedIdeaIds.has(idea.id),
+      voteCount: voteState.voteCountsByIdeaId.get(idea.id) ?? 0,
+      hasCurrentUserVote: voteState.currentUserVotedIdeaIds.has(idea.id),
       comments: (commentsByIdeaId.get(idea.id) ?? []).map((comment) => ({
         id: comment.id,
         body: comment.body,
@@ -316,6 +415,68 @@ export async function getIdeasForList(
     return {
       status: "ready",
       ideas: options.sort === "ranking" ? sortIdeasForRanking(ideas) : ideas,
+    };
+  } catch {
+    return {
+      status: "error",
+      ideas: [],
+    };
+  }
+}
+
+export async function getIdeasForRanking(): Promise<IdeaRankingResult> {
+  if (!getSupabasePublicConfig()) {
+    return {
+      status: "unconfigured",
+      ideas: [],
+    };
+  }
+
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data, error } = await measureServerTiming(
+      "supabase.ideas.rankingList",
+      () =>
+        supabase
+          .from("ideas")
+          .select("id,title,location,created_at")
+          .order("created_at", { ascending: false }),
+    );
+
+    if (error) {
+      return {
+        status: "error",
+        ideas: [],
+      };
+    }
+
+    const ideaRows = (data ?? []) as IdeaRankingRow[];
+    const voteState = await getVoteStateForIdeaIds({
+      supabase,
+      ideaIds: ideaRows.map((idea) => idea.id),
+      includeCurrentUserVoteState: false,
+      currentUserId: null,
+      timingLabel: "supabase.ideas.votesForRanking",
+    });
+
+    if (!voteState) {
+      return {
+        status: "error",
+        ideas: [],
+      };
+    }
+
+    return {
+      status: "ready",
+      ideas: sortRankingItems(
+        ideaRows.map((idea) => ({
+          id: idea.id,
+          title: idea.title,
+          location: idea.location,
+          createdAt: idea.created_at,
+          voteCount: voteState.voteCountsByIdeaId.get(idea.id) ?? 0,
+        })),
+      ),
     };
   } catch {
     return {

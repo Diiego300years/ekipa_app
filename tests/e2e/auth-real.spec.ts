@@ -996,7 +996,9 @@ test.describe("real Supabase scheduling", () => {
       await expect(rsvpControl.getByTestId("calendar-rsvp-declined-count"))
         .toHaveText("0");
 
-      await rsvpControl.getByRole("button", { name: "Będę" }).click();
+      await rsvpControl
+        .getByRole("button", { exact: true, name: "Będę" })
+        .click();
 
       await expect(
         rsvpControl.getByText("Zapisano odpowiedź: Będę."),
@@ -1008,7 +1010,7 @@ test.describe("real Supabase scheduling", () => {
         rsvpControl.getByTestId("calendar-rsvp-declined-count"),
       ).toHaveText("0");
       await expect(
-        rsvpControl.getByRole("button", { name: "Będę" }),
+        rsvpControl.getByRole("button", { exact: true, name: "Będę" }),
       ).toHaveAttribute("aria-pressed", "true");
 
       await rsvpControl.getByRole("button", { name: "Nie będę" }).click();
