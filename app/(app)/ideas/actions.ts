@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
 import { validateIdeaFormData } from "@/lib/idea-form-validation";
@@ -36,6 +37,12 @@ type CreatedIdeaCommentRow = {
   body: string;
   created_at: string;
   updated_at: string;
+};
+
+type VotedIdeaRow = {
+  id: string;
+  title: string;
+  created_by: string;
 };
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
@@ -195,6 +202,10 @@ function editIdeaAuthRequired(): EditIdeaActionState {
   };
 }
 
+function getPushDisplayName(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
 export async function voteForIdeaAction(
   formData: FormData,
 ): Promise<VoteActionResult> {
@@ -302,6 +313,37 @@ export async function voteForIdeaAction(
         ideaId,
       );
     }
+
+    after(async () => {
+      try {
+        const { data: idea, error: ideaError } = await measureServerTiming(
+          "supabase.votes.ideaForPush",
+          () =>
+            supabase
+              .from("ideas")
+              .select("id,title,created_by")
+              .eq("id", ideaId)
+              .maybeSingle<VotedIdeaRow>(),
+        );
+
+        if (ideaError || !idea || idea.created_by === user.id) {
+          return;
+        }
+
+        const { sendIdeaVotePush } = await import("@/lib/push/push-admin");
+
+        await sendIdeaVotePush({
+          ownerUserId: idea.created_by,
+          voterUserId: user.id,
+          voterDisplayName: getPushDisplayName(
+            user.user_metadata.display_name,
+          ),
+          ideaTitle: idea.title,
+        });
+      } catch {
+        console.warn("[push] Vote push delivery could not be scheduled.");
+      }
+    });
 
     return voteActionSuccess(confirmedState, "Głos został oddany.");
   } catch {

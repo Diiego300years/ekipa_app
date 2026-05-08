@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 import { appendAuthRedirectMessage } from "@/lib/auth/redirect-message";
 import { measureServerTiming } from "@/lib/performance/server-timing";
@@ -35,6 +36,7 @@ type TimeParts = {
 
 type SchedulingIdeaOwnerRow = {
   id: string;
+  title: string;
   created_by: string;
 };
 
@@ -265,7 +267,7 @@ export async function scheduleIdeaAction(
       () =>
         supabase
           .from("ideas")
-          .select("id,created_by")
+          .select("id,title,created_by")
           .eq("id", ideaId)
           .maybeSingle<SchedulingIdeaOwnerRow>(),
     );
@@ -305,6 +307,20 @@ export async function scheduleIdeaAction(
     }
 
     revalidatePath("/calendar");
+    after(async () => {
+      try {
+        const { sendScheduledEventPush } = await import("@/lib/push/push-admin");
+
+        await sendScheduledEventPush({
+          schedulerUserId: user.id,
+          ideaTitle: idea.title,
+        });
+      } catch {
+        console.warn(
+          "[push] Scheduled event push delivery could not be scheduled.",
+        );
+      }
+    });
     redirectPath = appendAuthRedirectMessage(
       "/calendar",
       "success",

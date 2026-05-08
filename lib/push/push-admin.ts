@@ -6,8 +6,11 @@ import webPush from "web-push";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 
 import {
+  createIdeaVotePushPayload,
   createNewIdeaPushPayload,
+  createScheduledEventPushPayload,
   isValidVapidSubject,
+  type PushNotificationPayload,
 } from "./push-utils";
 
 type PushDeliveryConfig = {
@@ -32,6 +35,25 @@ type NewIdeaPushInput = {
   authorUserId: string;
   authorDisplayName: string;
   ideaTitle: string;
+};
+
+type ScheduledEventPushInput = {
+  schedulerUserId: string;
+  ideaTitle: string;
+};
+
+type IdeaVotePushInput = {
+  ownerUserId: string;
+  voterUserId: string;
+  voterDisplayName: string;
+  ideaTitle: string;
+};
+
+type PushSubscriptionReadResult = {
+  data: unknown[] | null;
+  error: {
+    code?: string;
+  } | null;
 };
 
 const fanOutLimit = 25;
@@ -197,11 +219,15 @@ async function sendToSubscription({
   }
 }
 
-export async function sendNewIdeaPush({
-  authorUserId,
-  authorDisplayName,
-  ideaTitle,
-}: NewIdeaPushInput) {
+async function sendPushToTargets({
+  loadSubscriptions,
+  notification,
+}: {
+  loadSubscriptions: (
+    supabase: SupabaseClient,
+  ) => PromiseLike<PushSubscriptionReadResult>;
+  notification: PushNotificationPayload;
+}) {
   try {
     const config = getDeliveryConfig();
 
@@ -215,11 +241,7 @@ export async function sendNewIdeaPush({
       return;
     }
 
-    const { data, error } = await supabase
-      .from("push_subscriptions")
-      .select("id,user_id,endpoint,p256dh,auth")
-      .neq("user_id", authorUserId)
-      .limit(fanOutLimit + 1);
+    const { data, error } = await loadSubscriptions(supabase);
 
     if (error) {
       logPushWarning("Push delivery skipped because subscriptions could not be read.", {
@@ -245,12 +267,7 @@ export async function sendNewIdeaPush({
       return;
     }
 
-    const payload = JSON.stringify(
-      createNewIdeaPushPayload({
-        authorDisplayName,
-        ideaTitle,
-      }),
-    );
+    const payload = JSON.stringify(notification);
     const results = {
       failed: 0,
       invalid: 0,
@@ -274,4 +291,64 @@ export async function sendNewIdeaPush({
   } catch {
     logPushError("Push delivery failed unexpectedly.");
   }
+}
+
+export async function sendNewIdeaPush({
+  authorUserId,
+  authorDisplayName,
+  ideaTitle,
+}: NewIdeaPushInput) {
+  await sendPushToTargets({
+    loadSubscriptions: (supabase) =>
+      supabase
+        .from("push_subscriptions")
+        .select("id,user_id,endpoint,p256dh,auth")
+        .neq("user_id", authorUserId)
+        .limit(fanOutLimit + 1),
+    notification: createNewIdeaPushPayload({
+      authorDisplayName,
+      ideaTitle,
+    }),
+  });
+}
+
+export async function sendScheduledEventPush({
+  schedulerUserId,
+  ideaTitle,
+}: ScheduledEventPushInput) {
+  await sendPushToTargets({
+    loadSubscriptions: (supabase) =>
+      supabase
+        .from("push_subscriptions")
+        .select("id,user_id,endpoint,p256dh,auth")
+        .neq("user_id", schedulerUserId)
+        .limit(fanOutLimit + 1),
+    notification: createScheduledEventPushPayload({
+      ideaTitle,
+    }),
+  });
+}
+
+export async function sendIdeaVotePush({
+  ownerUserId,
+  voterUserId,
+  voterDisplayName,
+  ideaTitle,
+}: IdeaVotePushInput) {
+  if (ownerUserId === voterUserId) {
+    return;
+  }
+
+  await sendPushToTargets({
+    loadSubscriptions: (supabase) =>
+      supabase
+        .from("push_subscriptions")
+        .select("id,user_id,endpoint,p256dh,auth")
+        .eq("user_id", ownerUserId)
+        .limit(fanOutLimit + 1),
+    notification: createIdeaVotePushPayload({
+      voterDisplayName,
+      ideaTitle,
+    }),
+  });
 }
